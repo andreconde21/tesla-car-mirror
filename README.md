@@ -73,27 +73,29 @@ Control channel `ctl` (JSON): car→phone `hello`, `apps?`, `start{sid,pkg,w,h,d
 `stop`, `touch{a,id,x,y,w,h}`, `scroll`, `key{k}`, `reset`, `resize{w,h}`, `ping`;
 phone→car `apps`, `icon`, `started`, `ended{reason}`, `stats{lag}`, `pong`.
 
-## Deploy (development-central)
+## Deploy the server
 
-- Coolify project **CarMirror**, service `carmirror` (uuid `w12l0nk5207nljx39hryctbk`):
-  `node:22-alpine` running `/data/carmirror/app` (read-only), state in `/data/carmirror/data`
-  (`state.json` pairings, `car.log` car-side logs), APK in `/data/carmirror/apk`.
-- Public on purpose (the car isn't on the tailnet): `/opt/tailnet-access/hosts.yaml`.
-- Update the web/server: `rsync -a --delete --exclude data --exclude apk --exclude 'public/test.*' --exclude public/anim.html server/ /data/carmirror/app/`
-  then restart the service in Coolify (static files need no restart).
+Any host that serves HTTPS works (WebCodecs needs a secure context):
+
+```bash
+cd server && npm ci && PORT=8080 DATA_DIR=./data APK_DIR=./apk node server.js
+```
+
+Put it behind a TLS reverse proxy (WebSocket upgrade on `/ws`). Pairings live in
+`DATA_DIR/state.json` and car-side logs in `DATA_DIR/car.log`. Drop the APK at
+`APK_DIR/carmirror.apk` (optional `version.json`) to serve it at `/get`.
+The phone app's default server is set in `android/app/build.gradle.kts` (`DEFAULT_SERVER`)
+and can be changed in the app under Advanced.
 
 ## Build the APK
 
 ```bash
 cd android
-export ANDROID_HOME=/opt/android-sdk CARMIRROR_KEYSTORE=/root/.android-keys/carmirror.jks \
-       CARMIRROR_KEYSTORE_PASSWORD=$(cat /root/.android-keys/carmirror.pass)
+export ANDROID_HOME=/path/to/android-sdk CARMIRROR_KEYSTORE=/path/to/carmirror.jks CARMIRROR_KEYSTORE_PASSWORD=...
 ./gradlew assembleRelease -PversionCode=2 -PversionName=1.0.1
-cp app/build/outputs/apk/release/app-release.apk /data/carmirror/apk/carmirror.apk
 ```
 
-The signing key lives only in `/root/.android-keys` (root-only). Keep it: sideloaded updates
-must be signed with the same key.
+Keep the keystore safe and out of the repo: sideloaded updates must be signed with the same key.
 
 ## Testing without a car
 
@@ -108,7 +110,7 @@ auto-degrade handles. Real phones encode in hardware.
 ## Known limits / to verify in the car
 
 1. **Tesla browser support:** run `/diag` in the car first. Needs RTCPeerConnection, VideoDecoder
-   and avc1 support. The results land in `/data/carmirror/data/car.log`.
+   and avc1 support. The results land in the server's `car.log`.
 2. **Hotspot candidate:** the phone app shows "Last link candidates". The hotspot address
    (often 192.168.x.x or 10.x on `swlan0`/`ap0`) must be in that list. The car's status bar says
    `direct` when the link uses the hotspot.
