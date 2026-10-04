@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Get CarMirror</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { overflow: auto; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 60px; }
+    ol li { margin-bottom: 12px; }
+    code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CarMirror for Android</h1>
+    <p class="muted" id="ver"></p>
+    <p><a class="btn primary" href="/download/carmirror.apk">Download the APK</a></p>
+    <h2>One-time setup on the phone</h2>
+    <ol>
+      <li>Install <b>Shizuku</b> from Google Play (or GitHub: RikkaApps/Shizuku).</li>
+      <li>Start Shizuku with <b>Wireless debugging</b>. Shizuku's own screen walks you through it: Developer options → Wireless debugging → pair with code. After a phone reboot, open Shizuku and tap Start again.</li>
+      <li>Install the CarMirror APK (allow "install unknown apps" for your browser or file manager).</li>
+      <li>Open CarMirror, tap <b>Grant Shizuku access</b>, pick the apps to show in the car, then tap <b>Start</b>.</li>
+    </ol>
+    <h2>In the car</h2>
+    <ol>
+      <li>Turn on the phone's hotspot and connect the car to it (car Wi-Fi settings).</li>
+      <li>Open the car's browser at <code>carmirror.outsmartis.dev</code> and type the 6-digit code shown in the phone app. You only pair once.</li>
+    </ol>
+  </div>
+  <script>
+    fetch('/api/version').then((r) => r.json()).then((v) => {
+      const a = v.apk;
+      document.getElementById('ver').textContent = a ? `Version ${a.versionName || '?'} (${a.builtAt || ''})` : 'APK not uploaded yet';
+    }).catch(() => {});
+  </script>
+</body>
+</html>

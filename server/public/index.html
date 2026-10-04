@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0b0d10">
+  <title>CarMirror</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <div class="brand"><span id="dot" class="dot"></span><span id="status">Starting…</span></div>
+      <div class="top-actions">
+        <button id="btn-layout" class="chip" hidden>Split</button>
+        <button id="btn-immersive" class="chip" hidden title="Hide bars">Hide bars</button>
+        <button id="btn-fullscreen" class="chip" title="Fullscreen">Fullscreen</button>
+        <button id="btn-settings" class="chip" title="Settings">Settings</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- pair screen -->
+      <section id="screen-pair" class="screen" hidden>
+        <div class="card">
+          <h1>Pair with your phone</h1>
+          <p class="muted">Open <b>CarMirror</b> on your phone and type the 6-digit code it shows.</p>
+          <div id="code-display" class="code-display">______</div>
+          <div class="keypad" id="keypad"></div>
+          <p id="pair-error" class="error"></p>
+        </div>
+      </section>
+
+      <!-- waiting / message screen -->
+      <section id="screen-msg" class="screen" hidden>
+        <div class="card center">
+          <div class="spinner" id="msg-spinner"></div>
+          <h1 id="msg-title">Connecting…</h1>
+          <p id="msg-body" class="muted"></p>
+          <div id="msg-actions"></div>
+        </div>
+      </section>
+
+      <!-- panes -->
+      <section id="screen-panes" class="screen panes" hidden></section>
+    </main>
+
+    <button id="btn-show-bars" class="show-bars" hidden title="Show bars">⌃</button>
+
+    <dialog id="settings">
+      <form method="dialog" class="settings">
+        <h2>Settings</h2>
+        <label>Video quality
+          <select id="set-bitrate">
+            <option value="4">Data saver · 4 Mbps</option>
+            <option value="8">Balanced · 8 Mbps</option>
+            <option value="12">High · 12 Mbps</option>
+            <option value="20">Max · 20 Mbps</option>
+          </select>
+        </label>
+        <label>Frame rate
+          <select id="set-fps">
+            <option value="30">30 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+        </label>
+        <label>Text size on the car screen
+          <select id="set-scale">
+            <option value="1.0">Small</option>
+            <option value="1.25">Medium</option>
+            <option value="1.5">Large</option>
+            <option value="1.75">Extra large</option>
+          </select>
+        </label>
+        <label class="row"><input type="checkbox" id="set-stats"> Show stats overlay</label>
+        <p class="muted small">Quality and text size apply to apps opened after you change them.</p>
+        <div class="settings-actions">
+          <button value="forget" id="btn-forget" class="danger">Unpair this car</button>
+          <button value="close" class="primary">Done</button>
+        </div>
+        <p class="muted small" id="about"></p>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+  </div>
+
+  <template id="tpl-pane">
+    <div class="pane">
+      <div class="pane-bar">
+        <button class="pb back" title="Back">◀ Back</button>
+        <span class="pane-title"></span>
+        <span class="pane-stats"></span>
+        <button class="pb keyframe" title="Refresh picture">⟳</button>
+        <button class="pb apps" title="Apps">▦ Apps</button>
+        <button class="pb close" title="Close app">✕</button>
+      </div>
+      <div class="pane-body">
+        <div class="launcher">
+          <div class="grid"></div>
+        </div>
+        <div class="stage" hidden>
+          <canvas></canvas>
+          <div class="stage-msg" hidden></div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

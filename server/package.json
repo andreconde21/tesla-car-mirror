@@ -1,0 +1,14 @@
+{
+  "name": "carmirror-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Signaling server + car web client for CarMirror",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

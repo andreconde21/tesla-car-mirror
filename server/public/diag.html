@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>CarMirror Diagnostics</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { overflow: auto; }
+    .wrap { max-width: 900px; margin: 0 auto; padding: 20px 16px 60px; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-word; }
+    td:first-child { color: var(--muted); width: 38%; }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    canvas { border: 1px solid var(--line); max-width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CarMirror diagnostics</h1>
+    <p class="muted">Open this page in the car's browser. The results are sent to the CarMirror server automatically.</p>
+    <table id="t"></table>
+    <h2>Canvas animation test</h2>
+    <p class="muted">Should keep moving while driving. If it freezes when the car moves, the browser throttles canvas drawing.</p>
+    <canvas id="anim" width="480" height="120"></canvas>
+    <p><a class="btn" href="/">Back to CarMirror</a></p>
+  </div>
+  <script type="module">
+    import { log } from '/js/remotelog.js';
+    const rows = [];
+    const t = document.getElementById('t');
+    function row(k, v, ok) {
+      rows.push([k, v]);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${k}</td><td class="${ok === true ? 'ok' : ok === false ? 'bad' : ''}"></td>`;
+      tr.lastChild.textContent = typeof v === 'string' ? v : JSON.stringify(v);
+      t.appendChild(tr);
+    }
+    row('User agent', navigator.userAgent);
+    const chrome = navigator.userAgent.match(/Chrome\/([\d.]+)/);
+    row('Chromium version', chrome ? chrome[1] : 'unknown');
+    row('Screen', `${screen.width}x${screen.height} @${devicePixelRatio}x, viewport ${innerWidth}x${innerHeight}`);
+    row('Secure context', String(isSecureContext), isSecureContext);
+    row('RTCPeerConnection', String(typeof RTCPeerConnection !== 'undefined'), typeof RTCPeerConnection !== 'undefined');
+    row('VideoDecoder (WebCodecs)', String(typeof VideoDecoder !== 'undefined'), typeof VideoDecoder !== 'undefined');
+    row('Fullscreen API', String(!!document.documentElement.requestFullscreen));
+    row('Wake lock', String('wakeLock' in navigator));
+    row('Hardware threads', String(navigator.hardwareConcurrency));
+
+    async function codecs() {
+      if (typeof VideoDecoder === 'undefined') return;
+      for (const codec of ['avc1.42E01F', 'avc1.4D0028', 'avc1.640028', 'avc1.640033']) {
+        for (const hw of ['prefer-hardware', 'prefer-software']) {
+          try {
+            const r = await VideoDecoder.isConfigSupported({ codec, hardwareAcceleration: hw, optimizeForLatency: true });
+            row(`${codec} ${hw}`, String(r.supported), r.supported);
+          } catch (e) {
+            row(`${codec} ${hw}`, 'error: ' + e.message, false);
+          }
+        }
+      }
+    }
+
+    async function ice() {
+      if (typeof RTCPeerConnection === 'undefined') return;
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      pc.createDataChannel('x');
+      const cands = [];
+      pc.onicecandidate = (e) => { if (e.candidate) cands.push(e.candidate.candidate.split(' ').slice(4, 8).join(' ')); };
+      await pc.setLocalDescription(await pc.createOffer());
+      await new Promise((r) => setTimeout(r, 3000));
+      row('ICE candidates', cands.length ? cands.join(' | ') : 'none', cands.length > 0);
+      pc.close();
+    }
+
+    // canvas animation, also measures real frame rate
+    const c = document.getElementById('anim');
+    const ctx = c.getContext('2d');
+    let x = 0, frames = 0, last = performance.now();
+    let fpsText = '';
+    function tick(now) {
+      ctx.fillStyle = '#0b0d10'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.fillStyle = '#3e8bff'; ctx.fillRect(x, 30, 60, 60);
+      ctx.fillStyle = '#e8ecf1'; ctx.font = '16px sans-serif'; ctx.fillText(fpsText, 10, 20);
+      x = (x + 4) % c.width;
+      frames++;
+      if (now - last > 1000) { fpsText = frames + ' fps'; frames = 0; last = now; }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    await codecs();
+    await ice();
+    log('diag', Object.fromEntries(rows));
+  </script>
+</body>
+</html>
