@@ -19,4 +19,10 @@ interface IPrivileged {
     String sessionLog(int scid) = 4;
 
     int uid() = 5;
+
+    // Runs the scrcpy server for a one-shot query (e.g. list_encoders=true) and returns its output.
+    String runServer(in String[] args) = 6;
+
+    // Tail of Android's crash log buffer (native crash reports), for diagnosing server aborts.
+    String crashLog(int lines) = 7;
 }

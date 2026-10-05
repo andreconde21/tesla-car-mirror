@@ -133,7 +133,7 @@ const server = http.createServer(async (req, res) => {
       const entries = JSON.parse(body);
       const ip = clientIp(req);
       for (const e of Array.isArray(entries) ? entries.slice(0, 200) : [entries]) {
-        appendLog(JSON.stringify({ at: new Date().toISOString(), ip, ...e }).slice(0, 4000));
+        appendLog(JSON.stringify({ at: new Date().toISOString(), ip, ...e }).slice(0, 12000));
       }
       res.writeHead(204);
       res.end();

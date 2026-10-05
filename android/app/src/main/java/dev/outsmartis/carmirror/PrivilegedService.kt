@@ -65,6 +65,30 @@ class PrivilegedService : IPrivileged.Stub() {
 
     override fun uid(): Int = android.os.Process.myUid()
 
+    override fun runServer(args: Array<String>): String {
+        val master = File(DIR, "scrcpy-server.jar")
+        val jar = File(DIR, "scrcpy-query.jar")
+        master.copyTo(jar, overwrite = true)
+        jar.setReadable(true, false)
+        val pb = ProcessBuilder(listOf("app_process", "/", "com.genymobile.scrcpy.Server") + args).redirectErrorStream(true)
+        pb.environment()["CLASSPATH"] = jar.absolutePath
+        val p = pb.start()
+        val out = StringBuilder()
+        val reader = thread { runCatching { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } } }
+        if (!p.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly()
+        reader.join(1000)
+        return out.toString()
+    }
+
+    override fun crashLog(lines: Int): String = try {
+        val p = ProcessBuilder("logcat", "-d", "-b", "crash", "-t", lines.toString()).redirectErrorStream(true).start()
+        val text = p.inputStream.bufferedReader().readText()
+        p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        text
+    } catch (e: Exception) {
+        "logcat failed: $e"
+    }
+
     companion object {
         const val DIR = "/data/local/tmp/carmirror"
         private fun sha(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b)

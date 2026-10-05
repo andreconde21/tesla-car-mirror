@@ -100,13 +100,15 @@ class MirrorSession(
     private val onStats: (MirrorSession, Long, Int) -> Unit = { _, _, _ -> },
 ) {
     private val tag = "CarMirrorSession"
-    private val scid = Random.nextInt(1, 0x7fffffff)
+    private var scid = Random.nextInt(1, 0x7fffffff)
+    private val attemptLogs = StringBuilder()
     @Volatile private var channel: DataChannel? = null
     private val channelLatch = CountDownLatch(1)
     @Volatile private var socket: Socket? = null
     private var control: OutputStream? = null
     @Volatile private var stopped = false
     @Volatile private var appStarted = false
+    @Volatile private var flexDisplay = true
     private var pendingResize: Pair<Int, Int>? = null
 
     // backpressure
@@ -116,6 +118,8 @@ class MirrorSession(
         private set
     private var packets = 0L
     private var lastStats = 0L
+    /** The scrcpy server output when the session failed, for remote debugging. */
+    @Volatile var fullLog: String? = null
 
     fun attachChannel(dc: DataChannel) {
         channel = dc
@@ -132,7 +136,9 @@ class MirrorSession(
                 e.message ?: e.toString()
             }
             // stopped on purpose (car closed the app, link went down): nothing to report
+            if (!stopped) Thread.sleep(800) // let the server's last lines and exit code land in its log
             val reason = if (stopped) null else listOfNotNull(error, serverError()).joinToString(": ").ifEmpty { "The app stopped" }
+            fullLog = if (reason != null) attemptLogs.toString() + (runCatching { ShizukuBridge.service?.sessionLog(scid) }.getOrNull() ?: "") else null
             stop()
             onEnded(this, reason)
         }
@@ -143,34 +149,68 @@ class MirrorSession(
             ?: throw IllegalStateException("Shizuku isn't running on the phone. Open Shizuku and tap Start.")
         ShizukuBridge.ensureServerInstalled(service)
 
+        var lastError: Exception? = null
+        var crashCollected = false
+        for (profile in ScrcpyProfiles.ordered(service)) {
+            if (stopped) return
+            try {
+                attempt(service, profile)
+                return
+            } catch (e: Exception) {
+                // only a server that dies before its first frame is worth retrying differently
+                if (stopped || appStarted) throw e
+                lastError = e
+                Thread.sleep(500)
+                val log = runCatching { service.sessionLog(scid) }.getOrDefault("")
+                attemptLogs.append("--- profile ${profile.name}: $e\n").append(log.takeLast(1500)).append('\n')
+                if (!crashCollected) {
+                    crashCollected = true
+                    val crash = runCatching { service.crashLog(120) }.getOrDefault("")
+                    attemptLogs.append("--- crash buffer\n").append(crash.takeLast(5000)).append('\n')
+                }
+                Log.w(tag, "session $sid: profile ${profile.name} failed ($e), trying the next one")
+                runCatching { service.stopSession(scid) }
+                runCatching { socket?.close() }
+                control = null
+                scid = Random.nextInt(1, 0x7fffffff)
+            }
+        }
+        throw lastError ?: IllegalStateException("no scrcpy profile worked")
+    }
+
+    private fun attempt(service: IPrivileged, profile: ScrcpyProfiles.Profile) {
         val secret = ByteArray(24).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }.substring(0, 32)
-        val args = arrayOf(
-            BuildConfig.SCRCPY_VERSION,
-            "scid=%08x".format(scid),
-            "log_level=info",
-            "video=true",
-            "audio=false", // sound stays on the phone -> car Bluetooth, perfectly in sync
-            "control=true",
-            "tunnel_forward=false",
-            "video_codec=h264", // hardware-decodable in every browser
-            "video_bit_rate=$bitrate",
-            "max_fps=$fps",
-            "new_display=${width}x$height/$dpi",
-            "flex_display=true", // lets the car resize the display (split view, bars hidden)
-            "vd_destroy_content=false", // when the car leaves, apps move back to the phone screen
-            "vd_system_decorations=false",
-            "display_ime_policy=local", // keyboard shows on the car screen
-            "keep_active=true",
-            "send_device_meta=false",
-            "send_dummy_byte=false",
-            "send_stream_meta=true",
-            "send_frame_meta=true",
-            "clipboard_autosync=false",
-            "power_off_on_close=false",
-            "show_touches=false",
-            "stay_awake=false",
-            "cleanup=true",
+        val options = linkedMapOf(
+            "scid" to "%08x".format(scid),
+            "log_level" to "info",
+            "video" to "true",
+            "audio" to "false", // sound stays on the phone -> car Bluetooth, perfectly in sync
+            "control" to "true",
+            "tunnel_forward" to "false",
+            "video_codec" to "h264", // hardware-decodable in every browser
+            "video_bit_rate" to "$bitrate",
+            "max_fps" to "$fps",
+            "new_display" to "${width}x$height/$dpi",
+            "flex_display" to "true", // lets the car resize the display (split view, bars hidden)
+            "vd_destroy_content" to "false", // when the car leaves, apps move back to the phone screen
+            "vd_system_decorations" to "false",
+            "display_ime_policy" to "local", // keyboard shows on the car screen
+            "keep_active" to "true",
+            "send_device_meta" to "false",
+            "send_dummy_byte" to "false",
+            "send_stream_meta" to "true",
+            "send_frame_meta" to "true",
+            "clipboard_autosync" to "false",
+            "power_off_on_close" to "false",
+            "show_touches" to "false",
+            "stay_awake" to "false",
+            "cleanup" to "true",
         )
+        options.putAll(profile.overrides)
+        if (profile.overrides["max_fps"] != null) options["max_fps"] = minOf(fps, profile.overrides["max_fps"]!!.toInt()).toString()
+        flexDisplay = options["flex_display"] == "true"
+        val args = arrayOf(BuildConfig.SCRCPY_VERSION) + options.map { (k, v) -> "$k=$v" }
+        Log.i(tag, "session $sid: starting with profile ${profile.name}")
         val port = service.startSession(scid, args, secret)
         val s = Socket()
         s.tcpNoDelay = true
@@ -202,10 +242,11 @@ class MirrorSession(
                 Log.i(tag, "session $sid video ${w}x$h")
                 sendSession(w, h)
                 if (!appStarted) {
+                    ScrcpyProfiles.remember(profile)
                     sendControl(ScrcpyControl.startApp(pkg))
                     synchronized(this) {
                         appStarted = true
-                        pendingResize?.let { (pw, ph) -> sendControl(ScrcpyControl.resizeDisplay(pw and 7.inv(), ph and 7.inv())) }
+                        pendingResize?.takeIf { flexDisplay }?.let { (pw, ph) -> sendControl(ScrcpyControl.resizeDisplay(pw and 7.inv(), ph and 7.inv())) }
                         pendingResize = null
                     }
                     onStarted(this)
@@ -308,6 +349,7 @@ class MirrorSession(
     /** scrcpy's controller crashes on a resize before its display exists: hold it until then. */
     @Synchronized
     fun resize(w: Int, h: Int) {
+        if (!flexDisplay) return // fixed-size display (fallback profile): the car letterboxes instead
         if (appStarted) sendControl(ScrcpyControl.resizeDisplay(w and 7.inv(), h and 7.inv()))
         else pendingResize = w to h
     }

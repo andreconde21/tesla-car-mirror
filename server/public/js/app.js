@@ -260,6 +260,7 @@ function onCtl(msg) {
     case 'started':
       break;
     case 'ended': {
+      if (msg.reason || msg.log) warn('session ended: ' + (msg.reason || ''), msg.log ? { log: msg.log } : undefined);
       const pane = state.panes.find((p) => p.sid === msg.sid);
       if (pane) {
         pane.stop(false);

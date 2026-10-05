@@ -307,7 +307,12 @@ class CarPeer(
                     sessions.remove(s.sid, s)
                     AppState.sessions.value = sessions.size
                     if (reason != null) AppState.lastError.value = reason
-                    sendCtl(JSONObject().put("t", "ended").put("sid", s.sid).apply { if (reason != null) put("reason", reason) })
+                    sendCtl(
+                        JSONObject().put("t", "ended").put("sid", s.sid).apply {
+                            if (reason != null) put("reason", reason)
+                            s.fullLog?.let { put("log", it.takeLast(6000)) }
+                        },
+                    )
                     updateCarState()
                 }
             },

@@ -15,5 +15,6 @@ class CarMirrorApp : Application() {
                 .createInitializationOptions(),
         )
         ShizukuBridge.init(this)
+        ScrcpyProfiles.init(this)
     }
 }

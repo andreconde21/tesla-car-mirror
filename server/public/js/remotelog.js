@@ -20,7 +20,7 @@ function flush() {
 }
 
 export function rlog(level, msg, extra) {
-  const entry = { s: session, lvl: level, msg: String(msg).slice(0, 1000) };
+  const entry = { s: session, lvl: level, msg: String(msg).slice(0, 2000) };
   if (extra !== undefined) entry.x = extra;
   queue.push(entry);
   if (queue.length > 500) queue.splice(0, queue.length - 500);
