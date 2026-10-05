@@ -7,7 +7,12 @@ class CarMirrorApp : Application() {
     override fun onCreate() {
         super.onCreate()
         PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions(),
+            PeerConnectionFactory.InitializationOptions.builder(this)
+                // libwebrtc only gathers candidates on interfaces Android's ConnectivityManager
+                // knows about. The hotspot (swlan0/ap0) isn't one of them, so without this the
+                // phone never offers the one address the car can reach.
+                .setFieldTrials("WebRTC-AndroidNetworkMonitor-IsAdapterAvailable/Disabled/")
+                .createInitializationOptions(),
         )
         ShizukuBridge.init(this)
     }

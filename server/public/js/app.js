@@ -110,12 +110,20 @@ function buildKeypad() {
 }
 function submitCode() {
   if (code.length !== 6) return;
+  if (!state.sig?.open) {
+    $('#pair-error').textContent = 'No connection to the server. Retrying…';
+    log('pair submit while signaling closed');
+    return;
+  }
+  log('pair submit');
+  $('#pair-error').textContent = 'Checking…';
   state.sig.send({ t: 'pair', code });
 }
 
 // ------------------------------------------------------------------ signaling
 
 function onSigOpen(open) {
+  log('signaling ' + (open ? 'open' : 'closed'));
   if (open) {
     state.sig.send({ t: 'hello', role: 'car', carToken: load('cm.carToken', null) });
   } else {
@@ -124,6 +132,7 @@ function onSigOpen(open) {
 }
 
 function onSig(msg) {
+  if (msg.t !== 'signal') log('sig <- ' + msg.t);
   switch (msg.t) {
     case 'needPair':
       state.paired = false;
@@ -139,7 +148,8 @@ function onSig(msg) {
     case 'pairFailed':
       code = '';
       renderCode();
-      $('#pair-error').textContent = msg.msg || 'Pairing failed';
+      $('#pair-error').textContent = (msg.msg || 'Pairing failed') + '. Check the code on the phone and try again.';
+      warn('pair failed: ' + msg.msg);
       break;
     case 'paired':
       state.paired = true;

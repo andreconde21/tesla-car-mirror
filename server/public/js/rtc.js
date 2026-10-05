@@ -76,6 +76,7 @@ export class PhoneLink {
     this.pc = pc;
 
     pc.onicecandidate = (e) => {
+      if (e.candidate) log('car candidate ' + e.candidate.candidate.split(' ').slice(4, 8).join(' '));
       this.sig.send({ t: 'signal', data: { type: 'candidate', candidate: e.candidate ? e.candidate.toJSON() : null } });
     };
     pc.onconnectionstatechange = () => {
@@ -132,6 +133,7 @@ export class PhoneLink {
         this.pendingCandidates = [];
       } else if (data.type === 'candidate') {
         if (!data.candidate) return;
+        log('phone candidate ' + String(data.candidate.candidate).split(' ').slice(4, 8).join(' '));
         if (this.remoteSet) await this.pc.addIceCandidate(data.candidate);
         else this.pendingCandidates.push(data.candidate);
       } else if (data.type === 'bye') {

@@ -188,11 +188,19 @@ const pairCodes = new Map();
 /** ip -> { count, resetAt } failed pairing attempts */
 const pairFailures = new Map();
 
-const PAIR_CODE_TTL_MS = 10 * 60 * 1000;
+const PAIR_CODE_TTL_MS = 30 * 60 * 1000;
 const MAX_PAIR_FAILURES = 20;
 
 function send(ws, msg) {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+}
+
+/** The phone's current code, kept across reconnects (mobile links flap) until it expires. */
+function currentPairCode(deviceId) {
+  for (const [code, entry] of pairCodes) {
+    if (entry.deviceId === deviceId && entry.expires > Date.now() + 60_000) return code;
+  }
+  return newPairCode(deviceId);
 }
 
 function newPairCode(deviceId) {
@@ -267,7 +275,7 @@ function handlePhone(ws, msg) {
       ws.deviceId = deviceId;
       phones.set(deviceId, ws);
       const pairedCars = Object.values(state.cars).filter((c) => c.deviceId === deviceId).length;
-      send(ws, { t: 'welcome', pairCode: newPairCode(deviceId), pairedCars });
+      send(ws, { t: 'welcome', pairCode: currentPairCode(deviceId), pairedCars });
       notifyCars(deviceId, { t: 'phone', online: true });
       log('phone online', deviceId.slice(0, 8), state.devices[deviceId].name);
       break;
@@ -303,6 +311,7 @@ function handleCar(ws, msg, ip) {
   switch (msg.t) {
     case 'hello': {
       ws.role = 'car';
+      log('car hello', ip, msg.carToken ? 'with token' : 'no token');
       ws.connId = crypto.randomBytes(8).toString('hex');
       if (typeof msg.carToken === 'string') {
         const h = sha256(msg.carToken);
@@ -325,6 +334,7 @@ function handleCar(ws, msg, ip) {
       }
       const entry = pairCodes.get(String(msg.code || ''));
       if (!entry || entry.expires < Date.now()) {
+        log('pair failed', ip, 'code', String(msg.code || '').length, 'digits');
         f.count++;
         pairFailures.set(ip, f);
         send(ws, { t: 'pairFailed', msg: 'Wrong or expired code' });
@@ -396,7 +406,6 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     if (ws.role === 'phone' && phones.get(ws.deviceId) === ws) {
       phones.delete(ws.deviceId);
-      for (const [code, entry] of pairCodes) if (entry.deviceId === ws.deviceId) pairCodes.delete(code);
       notifyCars(ws.deviceId, { t: 'phone', online: false });
       log('phone offline', ws.deviceId.slice(0, 8));
     } else if (ws.role === 'car' && ws.deviceId) {

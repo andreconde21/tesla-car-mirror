@@ -41,6 +41,13 @@ class CarPeer(
     private var carInfo = "car"
     private val localCands = mutableListOf<String>()
 
+    // hotspot relay (see HotspotRelay)
+    private var relay: HotspotRelay? = null
+    private var relayMid: String = "0"
+    private var relayMLine = 0
+    private val carIps = mutableSetOf<String>()
+    private val advertised = mutableSetOf<String>()
+
 
     // ------------------------------------------------------------ signaling
 
@@ -69,6 +76,11 @@ class CarPeer(
             "candidate" -> {
                 val c = data.optJSONObject("candidate") ?: return@post
                 val ice = IceCandidate(c.optString("sdpMid", "0"), c.optInt("sdpMLineIndex", 0), c.getString("candidate"))
+                val parts = c.getString("candidate").split(" ")
+                if (parts.size > 7 && parts[2].equals("udp", true) && parts[7] == "host" && !parts[4].contains(":")) {
+                    carIps += parts[4]
+                    advertiseRelay()
+                }
                 if (remoteSet) pc.addIceCandidate(ice) else pendingCandidates += ice
             }
             "bye" -> close("car said bye: ${data.optString("reason")}", notify = false)
@@ -99,6 +111,10 @@ class CarPeer(
                 AppState.localCandidates.value = synchronized(localCands) { localCands.toList() }
             }
             Log.i(tag, "local candidate ${c.sdp}")
+            if (parts.size > 7 && parts[2].equals("udp", true) && parts[4] == "127.0.0.1") {
+                val port = parts[5].toIntOrNull()
+                if (port != null) post { startRelay(port, c.sdpMid, c.sdpMLineIndex) }
+            }
             sendSignal(
                 JSONObject().put("type", "candidate").put(
                     "candidate",
@@ -175,6 +191,40 @@ class CarPeer(
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
         }
         pc = factory.createPeerConnection(config, observer) ?: throw IllegalStateException("createPeerConnection failed")
+    }
+
+    // ------------------------------------------------------------ hotspot relay
+
+    private fun startRelay(loopbackPort: Int, mid: String?, mLine: Int) {
+        if (relay != null || closed) return
+        relay = try {
+            HotspotRelay(loopbackPort)
+        } catch (e: Exception) {
+            Log.w(tag, "relay failed: $e")
+            return
+        }
+        relayMid = mid ?: "0"
+        relayMLine = mLine
+        advertiseRelay()
+    }
+
+    /** Offer the relay at every address the car might reach us on. */
+    private fun advertiseRelay() {
+        val r = relay ?: return
+        val targets = linkedSetOf<String>()
+        carIps.mapNotNullTo(targets) { HotspotRelay.guessFor(it) }
+        HotspotRelay.visibleAddresses().filterTo(targets) { HotspotRelay.guessFor(it) != null }
+        for (ip in targets) {
+            if (!advertised.add(ip)) continue
+            val cand = "candidate:${(ip.hashCode() and 0x7fffffff)} 1 udp 2130706431 $ip ${r.port} typ host generation 0"
+            Log.i(tag, "relay candidate $cand")
+            sendSignal(
+                JSONObject().put("type", "candidate").put(
+                    "candidate",
+                    JSONObject().put("candidate", cand).put("sdpMid", relayMid).put("sdpMLineIndex", relayMLine),
+                ),
+            )
+        }
     }
 
     // ------------------------------------------------------------ control channel
@@ -282,6 +332,7 @@ class CarPeer(
         if (notify) runCatching { sendSignal(JSONObject().put("type", "bye").put("reason", reason)) }
         sessions.values.forEach { it.stop() }
         sessions.clear()
+        relay?.close()
         AppState.sessions.value = 0
         AppState.car.value = null
         exec.execute {

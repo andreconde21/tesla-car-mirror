@@ -48,7 +48,15 @@ class MirrorService : Service() {
         super.onCreate()
         prefs = Prefs(this)
         factory = PeerConnectionFactory.builder()
-            .setOptions(PeerConnectionFactory.Options().apply { networkIgnoreMask = 0 })
+            .setOptions(
+                PeerConnectionFactory.Options().apply {
+                    networkIgnoreMask = 0
+                    // Android's network monitor only reports networks ConnectivityManager knows
+                    // (mobile data, Wi-Fi client); the hotspot interface the car is on is not one
+                    // of them. Without the monitor, libwebrtc enumerates every interface itself.
+                    disableNetworkMonitor = true
+                },
+            )
             .createPeerConnectionFactory()
         createChannel()
         startForegroundCompat("Waiting for the car")
