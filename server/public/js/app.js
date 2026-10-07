@@ -28,7 +28,7 @@ function save(key, value) {
   }
 }
 
-const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false }, load('cm.settings', {}));
+const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true }, load('cm.settings', {}));
 
 const state = {
   sig: null,
@@ -278,8 +278,34 @@ function onCtl(msg) {
       state.mode = msg.mode;
       log('phone mode ' + msg.mode);
       if (msg.mode === 'screen' && state.layout === 'split') setLayout('full');
-      $('#btn-layout').hidden = msg.mode === 'screen';
+      $('#btn-layout').hidden = msg.mode === 'screen' || $('#screen-panes').hidden;
       break;
+    case 'bars': {
+      const pane = state.panes.find((p) => p.sid === msg.sid);
+      if (pane) {
+        pane.bars = { l: msg.l, t: msg.tp, r: msg.r, b: msg.b };
+        pane.applyCrop();
+      }
+      break;
+    }
+    case 'fg': {
+      log('phone foreground ' + msg.pkg + (msg.home ? ' (home)' : ''));
+      // screen mode: the phone's home screen is replaced by our own app grid in focus mode
+      const pane = state.panes.find((p) => p.sid);
+      if (pane && state.mode === 'screen') {
+        if (msg.home && settings.focus) pane.showOverlay('home');
+        else if (!msg.home) {
+          if (pane.overlay === 'home') pane.hideOverlay();
+          const app = state.apps.find((a) => a.pkg === msg.pkg);
+          if (app && pane.app && app.pkg !== pane.app.pkg) {
+            pane.app = app;
+            pane.setChrome();
+            savePanes();
+          }
+        }
+      }
+      break;
+    }
     case 'stats': {
       const pane = state.panes.find((p) => p.sid === msg.sid);
       if (pane) pane.onPhoneStats(msg);
@@ -337,7 +363,14 @@ class Pane {
 
     $('.back', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'key', sid: this.sid, k: 'back' });
     $('.keyframe', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'reset', sid: this.sid });
-    $('.apps', this.el).onclick = () => this.stop(true);
+    $('.apps', this.el).onclick = () => {
+      if (state.mode === 'screen' && this.sid) {
+        if (this.overlay) this.hideOverlay();
+        else this.showOverlay('apps');
+      } else {
+        this.stop(true);
+      }
+    };
     $('.close', this.el).onclick = () => {
       this.stop(true);
       if (state.layout === 'split') setLayout('full', this.index === 0 ? 1 : 0);
@@ -375,9 +408,39 @@ class Pane {
       const span = document.createElement('span');
       span.textContent = app.label;
       b.append(img, span);
-      b.onclick = () => this.open(app);
+      b.onclick = () => {
+        if (this.sid && state.mode === 'screen') {
+          // one phone screen: switching apps reuses the running stream
+          state.link?.sendCtl({ t: 'launch', sid: this.sid, pkg: app.pkg });
+          this.app = app;
+          this.hideOverlay();
+          this.setChrome();
+          savePanes();
+        } else {
+          this.open(app);
+        }
+      };
       this.grid.appendChild(b);
     }
+  }
+
+  applyCrop() {
+    if (!this.player) return;
+    const zero = { l: 0, t: 0, r: 0, b: 0 };
+    this.player.setCrop(settings.focus && this.bars ? this.bars : zero);
+  }
+
+  /** Show the app grid over a running screen-mode stream (switching apps keeps the stream). */
+  showOverlay(why) {
+    this.overlay = why;
+    this.launcher.classList.add('overlay');
+    this.launcher.hidden = false;
+  }
+
+  hideOverlay() {
+    this.overlay = null;
+    this.launcher.classList.remove('overlay');
+    if (this.sid) this.launcher.hidden = true;
   }
 
   /** Virtual display size in device pixels for the current stage, plus a dpi that keeps text readable. */
@@ -418,6 +481,9 @@ class Pane {
       dpi = Math.round((dpi * 2) / 3);
     }
     this.lastSize = { w, h };
+    this.bars = null;
+    this.overlay = null;
+    this.launcher.classList.remove('overlay');
     this.launcher.hidden = true;
     this.stage.hidden = false;
     this.showStageMsg(`Opening ${app.label}…`);
@@ -506,6 +572,8 @@ class Pane {
     this.sid = null;
     this.app = null;
     this.stage.hidden = true;
+    this.overlay = null;
+    this.launcher.classList.remove('overlay');
     this.launcher.hidden = false;
     this.ctxClear();
     this.setChrome();
@@ -611,17 +679,30 @@ function setupChrome() {
     $('#set-fps').value = String(settings.fps);
     $('#set-scale').value = String(settings.scale);
     $('#set-stats').checked = !!settings.stats;
+    $('#set-focus').checked = !!settings.focus;
+    $('#row-scale').hidden = state.mode === 'screen';
     $('#btn-forget').hidden = !state.paired;
     $('#about').textContent = `CarMirror ${VERSION} · ${navigator.userAgent}`;
     dlg.showModal();
   };
   dlg.addEventListener('close', () => {
+    const before = JSON.stringify([settings.bitrate, settings.fps, settings.scale]);
     settings.bitrate = Number($('#set-bitrate').value);
     settings.fps = Number($('#set-fps').value);
     settings.scale = Number($('#set-scale').value);
     settings.stats = $('#set-stats').checked;
+    settings.focus = $('#set-focus').checked;
     save('cm.settings', settings);
-    for (const p of state.panes) p.setChrome();
+    const streamChanged = before !== JSON.stringify([settings.bitrate, settings.fps, settings.scale]);
+    for (const p of state.panes) {
+      p.setChrome();
+      p.applyCrop();
+      // quality applies to the stream: restart what is showing with the new settings
+      if (streamChanged && p.sid && p.app) {
+        log('settings changed: reopening ' + p.app.pkg);
+        p.open(p.app);
+      }
+    }
     if (dlg.returnValue === 'forget') {
       if (confirm('Unpair this car? You will need a new code from the phone.')) {
         state.sig.send({ t: 'forget' });

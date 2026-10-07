@@ -3,6 +3,7 @@ package dev.outsmartis.carmirror
 import android.content.Context
 import android.content.Intent
 import android.graphics.Point
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -36,7 +37,10 @@ class ScreenSession(
     private val onStarted: (ScreenSession) -> Unit,
     private val onEnded: (ScreenSession, String?) -> Unit,
     private val onStats: (ScreenSession, Long, Int) -> Unit,
+    /** The phone's system bars as fractions of the screen (left, top, right, bottom), for cropping in the car. */
+    private val onBars: (ScreenSession, FloatArray) -> Unit = { _, _ -> },
 ) : CarSession {
+    private var lastBars: Rect? = null
     private val tag = "CarMirrorScreen"
     @Volatile private var channel: DataChannel? = null
     private val channelLatch = CountDownLatch(1)
@@ -75,7 +79,6 @@ class ScreenSession(
                 e.message ?: e.toString()
             } finally {
                 runCatching { wake.release() }
-                Projection.detach()
             }
             onEnded(this, if (stopped) null else error ?: "The screen mirror stopped")
         }
@@ -100,15 +103,18 @@ class ScreenSession(
         }
     }
 
-    private fun launchApp() {
-        val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return
+    /** Bring another app to the front without restarting the stream. */
+    fun launch(newPkg: String) = launchApp(newPkg)
+
+    private fun launchApp(target: String = pkg) {
+        val intent = context.packageManager.getLaunchIntentForPackage(target) ?: return
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         // the accessibility service may start activities from the background; fall back to the app context
         val ctx: Context = TouchService.instance ?: context
         try {
             ctx.startActivity(intent)
         } catch (e: Exception) {
-            Log.w(tag, "could not open $pkg: $e")
+            Log.w(tag, "could not open $target: $e")
             AppState.lastError.value = "Could not open the app from the background: allow \"Display over other apps\""
         }
     }
@@ -154,6 +160,8 @@ class ScreenSession(
             videoH = h
             Log.i(tag, "screen session $sid: ${w}x$h (phone ${dispW}x$dispH)")
             sender.sendSession(w, h)
+            lastBars = null
+            reportBars()
             if (!started) {
                 started = true
                 onStarted(this)
@@ -173,6 +181,7 @@ class ScreenSession(
                         Log.i(tag, "phone rotated: restarting capture")
                         break
                     }
+                    reportBars()
                 }
                 val idx = codec.dequeueOutputBuffer(info, 50_000)
                 if (idx < 0) continue
@@ -193,11 +202,20 @@ class ScreenSession(
                 codec.releaseOutputBuffer(idx, false)
             }
         } finally {
-            Projection.detach()
+            Projection.detach(surface)
             runCatching { codec.stop() }
             runCatching { codec.release() }
             runCatching { surface.release() }
         }
+    }
+
+    private fun reportBars() {
+        val t = TouchService.instance ?: return
+        if (dispW == 0) return
+        val r = t.systemBars(dispW, dispH)
+        if (r == lastBars) return
+        lastBars = r
+        onBars(this, floatArrayOf(r.left.toFloat() / dispW, r.top.toFloat() / dispH, r.right.toFloat() / dispW, r.bottom.toFloat() / dispH))
     }
 
     // ------------------------------------------------------------ input

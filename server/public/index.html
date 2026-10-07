@@ -66,7 +66,7 @@
             <option value="60">60 fps</option>
           </select>
         </label>
-        <label>Text size on the car screen
+        <label id="row-scale">Text size on the car screen
           <select id="set-scale">
             <option value="1.0">Small</option>
             <option value="1.25">Medium</option>
@@ -74,8 +74,9 @@
             <option value="1.75">Extra large</option>
           </select>
         </label>
+        <label class="row"><input type="checkbox" id="set-focus"> Focus mode: hide the phone's status bar, navigation bar and home screen</label>
         <label class="row"><input type="checkbox" id="set-stats"> Show stats overlay</label>
-        <p class="muted small">Quality and text size apply to apps opened after you change them.</p>
+        <p class="muted small">Changing quality restarts what is showing (a second or two).</p>
         <div class="settings-actions">
           <button value="forget" id="btn-forget" class="danger">Unpair this car</button>
           <button value="close" class="primary">Done</button>

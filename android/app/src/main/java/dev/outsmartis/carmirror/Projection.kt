@@ -91,8 +91,12 @@ object Projection {
         }
     }
 
-    fun detach() {
-        synchronized(lock) { display?.surface = null }
+    /** Unhook [surface] if it is still the display's target (a newer session may have taken over). */
+    fun detach(surface: Surface? = null) {
+        synchronized(lock) {
+            val d = display ?: return
+            if (surface == null || d.surface === surface) d.surface = null
+        }
     }
 
     fun stop() {

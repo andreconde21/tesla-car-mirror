@@ -4,7 +4,10 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.graphics.Path
+import android.graphics.Rect
+import android.view.accessibility.AccessibilityWindowInfo
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -39,7 +42,76 @@ class TouchService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    /** Package of the app in front (launcher included), from window-state events. */
+    @Volatile var foreground: String? = null
+        private set
+
+    private val homePackages: Set<String> by lazy {
+        packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+            .map { it.activityInfo.packageName }.toSet()
+    }
+
+    /** The launcher, or CarMirror's own phone screen: neither is worth showing in the car. */
+    fun isHome(pkg: String?) = pkg != null && (pkg in homePackages || pkg == packageName)
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event?.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        ) return
+        // let the window list settle, then ask which app owns the active window
+        main.removeCallbacks(checkForeground)
+        main.postDelayed(checkForeground, 250)
+    }
+
+    private val checkForeground = Runnable {
+        val pkg = activeAppPackage() ?: return@Runnable
+        if (pkg != foreground) {
+            Log.i(TAG, "foreground $pkg (home=${isHome(pkg)}, listener=${foregroundListener != null})")
+            foreground = pkg
+            foregroundListener?.invoke(pkg, isHome(pkg))
+        }
+    }
+
+    /**
+     * Package of the app window in front. Event package names lie (Pixel's home screen reports
+     * the Google app, overlays report systemui), the window list doesn't.
+     */
+    private fun activeAppPackage(): String? = try {
+        val apps = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        val w = apps.firstOrNull { it.isActive } ?: apps.firstOrNull { it.isFocused } ?: apps.firstOrNull()
+        w?.root?.packageName?.toString()
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Space taken by the status bar and navigation bar(s) right now, in screen pixels
+     * (left, top, right, bottom). Zero on a side whose bar is hidden (fullscreen video).
+     */
+    fun systemBars(dispW: Int, dispH: Int): Rect {
+        val out = Rect()
+        val b = Rect()
+        val list = try { windows } catch (_: Exception) { return out }
+        for (w in list) {
+            if (w.type != AccessibilityWindowInfo.TYPE_SYSTEM) continue
+            w.getBoundsInScreen(b)
+            val wide = b.width() >= dispW * 0.9
+            val tall = b.height() >= dispH * 0.9
+            when {
+                wide && b.top <= 0 && b.height() < dispH / 5 -> out.top = maxOf(out.top, b.bottom)
+                wide && b.bottom >= dispH - 1 && b.height() < dispH / 5 -> out.bottom = maxOf(out.bottom, dispH - b.top)
+                tall && b.left <= 0 && b.width() < dispW / 5 -> out.left = maxOf(out.left, b.right)
+                tall && b.right >= dispW - 1 && b.width() < dispW / 5 -> out.right = maxOf(out.right, dispW - b.left)
+            }
+        }
+        // Gesture navigation: its bar takes no touches, so it isn't in the window list. If the status
+        // bar shows (not fullscreen) and no navigation bar was found, it is the gesture bar at the bottom.
+        if (out.top > 0 && out.bottom == 0 && out.left == 0 && out.right == 0) {
+            val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+            if (id != 0) out.bottom = resources.getDimensionPixelSize(id)
+        }
+        return out
+    }
     override fun onInterrupt() {}
 
     fun down(x: Float, y: Float) = main.post {
@@ -124,6 +196,9 @@ class TouchService : AccessibilityService() {
         private const val TAG = "CarMirrorTouch"
         @Volatile var instance: TouchService? = null
             private set
+
+        /** (package, isHomeScreen) whenever the app in front changes. */
+        @Volatile var foregroundListener: ((String, Boolean) -> Unit)? = null
 
         fun isEnabled(context: Context): Boolean {
             val me = ComponentName(context, TouchService::class.java).flattenToString()

@@ -19,6 +19,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <intent>
+            <!-- to recognise the phone's launcher (focus mode hides the home screen) -->
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
         <package android:name="moe.shizuku.privileged.api" />
     </queries>
 

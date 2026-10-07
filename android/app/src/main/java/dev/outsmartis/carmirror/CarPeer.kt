@@ -248,6 +248,12 @@ class CarPeer(
                 carInfo = if (ua.contains("Tesla", ignoreCase = true)) "Tesla" else "car browser"
                 Log.i(tag, "car hello: $msg")
                 sendCtl(JSONObject().put("t", "caps").put("mode", mode()))
+                TouchService.foregroundListener = { pkg, home ->
+                    post { sendCtl(JSONObject().put("t", "fg").put("pkg", pkg).put("home", home)) }
+                }
+                TouchService.instance?.foreground?.let { pkg ->
+                    sendCtl(JSONObject().put("t", "fg").put("pkg", pkg).put("home", TouchService.instance?.isHome(pkg) == true))
+                }
                 updateCarState()
             }
             "apps?" -> sendApps()
@@ -263,6 +269,7 @@ class CarPeer(
             )
             "key" -> sessions[sid]?.key(msg.optString("k", "back"))
             "reset" -> sessions[sid]?.requestKeyFrame()
+            "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
         }
     }
@@ -322,6 +329,12 @@ class CarPeer(
             sessions.values.forEach { it.stop() }
             sessions.clear()
             ScreenSession(
+                onBars = { sess, f ->
+                    sendCtl(
+                        JSONObject().put("t", "bars").put("sid", sess.sid)
+                            .put("l", f[0].toDouble()).put("tp", f[1].toDouble()).put("r", f[2].toDouble()).put("b", f[3].toDouble()),
+                    )
+                },
                 context = context,
                 sid = sid,
                 pkg = pkg,

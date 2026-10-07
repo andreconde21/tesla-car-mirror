@@ -93,6 +93,7 @@ export class Player {
     this.lastKeyRequest = 0;
     this.gotFirstFrame = false;
     this.closed = false;
+    this.crop = { l: 0, t: 0, r: 0, b: 0 }; // fractions of the video hidden on each side (focus mode)
 
     // stats
     this.framesDrawn = 0;
@@ -143,14 +144,39 @@ export class Player {
     }
   }
 
+  /** Hide the phone's system bars: fractions of the picture to drop on each side. */
+  setCrop(c) {
+    const ok = (v) => (Number.isFinite(v) && v >= 0 && v < 0.4 ? v : 0);
+    this.crop = { l: ok(c.l), t: ok(c.t), r: ok(c.r), b: ok(c.b) };
+    this.resizeCanvas();
+  }
+
+  /** The part of the video that is shown, in video pixels. */
+  region() {
+    const c = this.crop;
+    const x = Math.round(this.videoW * c.l);
+    const y = Math.round(this.videoH * c.t);
+    const w = Math.max(16, Math.round(this.videoW * (1 - c.l - c.r)));
+    const h = Math.max(16, Math.round(this.videoH * (1 - c.t - c.b)));
+    return { x, y, w, h };
+  }
+
+  resizeCanvas() {
+    if (!this.videoW) return;
+    const r = this.region();
+    if (this.canvas.width !== r.w || this.canvas.height !== r.h) {
+      this.canvas.width = r.w;
+      this.canvas.height = r.h;
+    }
+    this.layout();
+  }
+
   onSession(w, h) {
     log(`video session ${w}x${h}`);
     this.videoW = w;
     this.videoH = h;
-    this.canvas.width = w;
-    this.canvas.height = h;
     this.waitingKey = true;
-    this.layout();
+    this.resizeCanvas();
   }
 
   onPacket({ flags, pts, data }) {
@@ -240,14 +266,13 @@ export class Player {
     }
     const w = frame.displayWidth;
     const h = frame.displayHeight;
-    if (this.canvas.width !== w || this.canvas.height !== h) {
-      this.canvas.width = w;
-      this.canvas.height = h;
+    if (this.videoW !== w || this.videoH !== h) {
       this.videoW = w;
       this.videoH = h;
-      this.layout();
+      this.resizeCanvas();
     }
-    this.ctx.drawImage(frame, 0, 0, w, h);
+    const r = this.region();
+    this.ctx.drawImage(frame, r.x, r.y, r.w, r.h, 0, 0, this.canvas.width, this.canvas.height);
     frame.close();
     this.framesDrawn++;
     if (!this.gotFirstFrame) {
@@ -263,9 +288,11 @@ export class Player {
     const sw = stage.clientWidth;
     const sh = stage.clientHeight;
     if (!sw || !sh) return;
-    const scale = Math.min(sw / this.videoW, sh / this.videoH);
-    this.canvas.style.width = Math.floor(this.videoW * scale) + 'px';
-    this.canvas.style.height = Math.floor(this.videoH * scale) + 'px';
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const scale = Math.min(sw / cw, sh / ch);
+    this.canvas.style.width = Math.floor(cw * scale) + 'px';
+    this.canvas.style.height = Math.floor(ch * scale) + 'px';
   }
 
   emitStats() {
@@ -287,8 +314,9 @@ export class Player {
     const c = this.canvas;
     const toVideo = (e) => {
       const r = c.getBoundingClientRect();
-      const x = Math.round(((e.clientX - r.left) / r.width) * this.videoW);
-      const y = Math.round(((e.clientY - r.top) / r.height) * this.videoH);
+      const reg = this.region();
+      const x = Math.round(reg.x + ((e.clientX - r.left) / r.width) * reg.w);
+      const y = Math.round(reg.y + ((e.clientY - r.top) / r.height) * reg.h);
       return {
         x: Math.max(0, Math.min(this.videoW - 1, x)),
         y: Math.max(0, Math.min(this.videoH - 1, y)),
