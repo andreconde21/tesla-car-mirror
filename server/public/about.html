@@ -34,6 +34,16 @@
     th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { color: var(--muted); font-weight: 600; }
     .foot { margin-top: 48px; color: var(--muted); font-size: 14px; }
+    .shot { margin: 18px 0 6px; }
+    .shot img { width: 100%; height: auto; display: block; border-radius: 12px; border: 1px solid var(--line); }
+    .shot figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .gallery .shot { margin: 0; }
+    .side { display: grid; grid-template-columns: 1fr 220px; gap: 24px; align-items: start; }
+    .side .shot { margin-top: 4px; }
+    @media (max-width: 640px) { .side { grid-template-columns: 1fr; } .side .shot { max-width: 260px; } }
+    .credit { color: var(--muted); font-size: 13px; }
+
   </style>
 </head>
 <body>
@@ -47,6 +57,10 @@
       <a class="btn primary" href="/get">Get the app</a>
       <a class="btn" href="https://github.com/andreconde21/tesla-car-mirror">Source on GitHub</a>
     </div>
+    <figure class="shot">
+      <a href="/img/car-youtube.webp"><img src="/img/car-youtube.webp" alt="A video playing full width on the car screen through CarMirror" width="1440" height="825"></a>
+      <figcaption>The passenger's video, full width on the Tesla screen.</figcaption>
+    </figure>
 
     <h2>What it does</h2>
     <div class="features">
@@ -58,6 +72,26 @@
       <div class="feature"><b>Focus mode</b><span>Hides the phone's status bar, navigation bar and home screen, so only the app shows.</span></div>
     </div>
 
+    <h2>Screenshots</h2>
+    <div class="gallery">
+      <figure class="shot">
+        <a href="/img/car-conductore.webp"><img src="/img/car-conductore.webp" alt="Conductore laid out for the full car screen" width="1440" height="825" loading="lazy"></a>
+        <figcaption>Conductore on its own car-sized screen (with Shizuku): the app uses the whole width.</figcaption>
+      </figure>
+      <figure class="shot">
+        <a href="/img/car-split.webp"><img src="/img/car-split.webp" alt="Split view: Conductore on the left, a video on the right" width="1440" height="825" loading="lazy"></a>
+        <figcaption>Split view: Conductore for the driver, a video for the passenger.</figcaption>
+      </figure>
+      <figure class="shot">
+        <a href="/img/car-launcher.webp"><img src="/img/car-launcher.webp" alt="The app grid on the car screen" width="1100" height="630" loading="lazy"></a>
+        <figcaption>The app grid: only the apps you picked on the phone.</figcaption>
+      </figure>
+      <figure class="shot">
+        <a href="/img/car-pair.webp"><img src="/img/car-pair.webp" alt="Pairing screen with a number pad" width="1100" height="630" loading="lazy"></a>
+        <figcaption>Pairing the car: type the code from the phone, once.</figcaption>
+      </figure>
+    </div>
+
     <h2>What you need</h2>
     <ul>
       <li>An Android phone (Android 11 or newer) with mobile data and a hotspot.</li>
@@ -66,6 +100,8 @@
     </ul>
 
     <h2>Setup on the phone (once, about 5 minutes)</h2>
+    <div class="side">
+    <div>
     <ol>
       <li><b>Install the app</b> from <a href="/get">the download page</a>. Your browser will ask to allow installing apps from it.</li>
       <li><b>Open CarMirror</b> and follow "1 · Phone setup":
@@ -80,6 +116,12 @@
       <li>Optional, for car-sized screens: install Shizuku and start it with <b>Wireless debugging</b> (needs Wi-Fi, once after every phone restart). Then tap <b>Allow</b> in CarMirror.</li>
       <li>Tip: on Samsung, a Modes &amp; Routines rule "when connected to the car's Bluetooth → turn on hotspot" makes every drive hands-free.</li>
     </ol>
+    </div>
+    <figure class="shot">
+      <a href="/img/phone-setup.webp"><img src="/img/phone-setup.webp" alt="The CarMirror phone app with its setup checklist and pairing code" width="540" height="1080" loading="lazy"></a>
+      <figcaption>The phone app: setup checklist and pairing code.</figcaption>
+    </figure>
+    </div>
 
     <h2>In the car</h2>
     <ol>
@@ -124,6 +166,7 @@
       <li>Report issues on <a href="https://github.com/andreconde21/tesla-car-mirror/issues">GitHub</a>.</li>
     </ul>
 
+    <p class="credit">The car screenshots show the real CarMirror car interface. The app content in them was put together from real app screenshots for illustration (Conductore's own screenshots; a frame of <i>Big Buck Bunny</i>, © Blender Foundation, CC BY 3.0, standing in for a video).</p>
     <p class="foot">CarMirror · <a href="/get">Download</a> · <a href="https://github.com/andreconde21/tesla-car-mirror">GitHub</a></p>
   </div>
 </body>
