@@ -271,6 +271,13 @@ class CarPeer(
             "reset" -> sessions[sid]?.requestKeyFrame()
             "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
+            "reconfigure" -> sessions[sid]?.reconfigure(
+                msg.optInt("w", 1280).coerceIn(320, 2560),
+                msg.optInt("h", 720).coerceIn(240, 2560),
+                msg.optInt("dpi", 240).coerceIn(80, 640),
+                msg.optInt("fps", 60).coerceIn(10, 60),
+                msg.optInt("bitrate", 8_000_000).coerceIn(1_000_000, 40_000_000),
+            )
         }
     }
 
@@ -286,14 +293,34 @@ class CarPeer(
         }
     }
 
+    private data class StartParams(val sid: Long, val pkg: String, val w: Int, val h: Int, val dpi: Int, val fps: Int, val bitrate: Int)
+
     private fun startSession(msg: JSONObject) {
-        val sid = msg.getLong("sid")
-        val pkg = msg.getString("pkg")
-        // scrcpy aligns sizes to 8 anyway; doing it here keeps touch coordinates exact
-        val w = msg.optInt("w", 1280).coerceIn(320, 2560) and 7.inv()
-        val h = msg.optInt("h", 720).coerceIn(240, 2560) and 7.inv()
+        val p = StartParams(
+            sid = msg.getLong("sid"),
+            pkg = msg.getString("pkg"),
+            // encoders like sizes in multiples of 16; doing it here keeps touch coordinates exact
+            w = msg.optInt("w", 1280).coerceIn(320, 2560) and 15.inv(),
+            h = msg.optInt("h", 720).coerceIn(240, 2560) and 15.inv(),
+            dpi = msg.optInt("dpi", 240).coerceIn(80, 640),
+            fps = msg.optInt("fps", 60).coerceIn(10, 60),
+            bitrate = msg.optInt("bitrate", 8_000_000).coerceIn(1_000_000, 40_000_000),
+        )
+        launchSession(p, mode())
+    }
+
+    private fun launchSession(p: StartParams, mode: String) {
         val onEnded = { sess: CarSession, reason: String? ->
             post {
+                if (sess is AppSession && !sess.startedOk && reason != null && !appsFailed) {
+                    // per-app screens didn't work on this phone/session: fall back to the phone screen
+                    Log.w(tag, "per-app screen failed ($reason), falling back to screen mode")
+                    appsFailed = true
+                    sendCtl(JSONObject().put("t", "caps").put("mode", "screen"))
+                    sessions.remove(sess.sid, sess)
+                    launchSession(p, "screen")
+                    return@post
+                }
                 sessions.remove(sess.sid, sess)
                 AppState.sessions.value = sessions.size
                 if (reason != null) AppState.lastError.value = reason
@@ -309,21 +336,9 @@ class CarPeer(
         val onStats = { sess: CarSession, lagMs: Long, dropped: Int ->
             sendCtl(JSONObject().put("t", "stats").put("sid", sess.sid).put("lag", lagMs).put("dropped", dropped))
         }
-        val fps = msg.optInt("fps", 60).coerceIn(10, 60)
-        val bitrate = msg.optInt("bitrate", 8_000_000).coerceIn(1_000_000, 40_000_000)
-        val session: CarSession = if (mode() == "apps") {
-            MirrorSession(
-                sid = sid,
-                pkg = pkg,
-                width = w,
-                height = h,
-                dpi = msg.optInt("dpi", 240).coerceIn(80, 640),
-                fps = fps,
-                bitrate = bitrate,
-                onStarted = { sendCtl(JSONObject().put("t", "started").put("sid", it.sid)) },
-                onEnded = onEnded,
-                onStats = onStats,
-            )
+        val onStarted = { sess: CarSession -> sendCtl(JSONObject().put("t", "started").put("sid", sess.sid)) }
+        val session: CarSession = if (mode == "apps") {
+            AppSession(context, p.sid, p.pkg, p.w, p.h, p.dpi, p.fps, p.bitrate, onStarted, onEnded, onStats)
         } else {
             // one phone screen: a new app replaces whatever was showing
             sessions.values.forEach { it.stop() }
@@ -336,26 +351,34 @@ class CarPeer(
                     )
                 },
                 context = context,
-                sid = sid,
-                pkg = pkg,
-                carW = w,
-                carH = h,
-                fps = fps,
-                bitrate = bitrate,
-                onStarted = { sendCtl(JSONObject().put("t", "started").put("sid", it.sid)) },
+                sid = p.sid,
+                pkg = p.pkg,
+                carW = p.w,
+                carH = p.h,
+                fps = p.fps,
+                bitrate = p.bitrate,
+                onStarted = onStarted,
                 onEnded = onEnded,
                 onStats = onStats,
             )
         }
-        sessions.put(sid, session)?.stop()
-        videoChannels[sid]?.let { session.attachChannel(it) }
+        sessions.put(p.sid, session)?.stop()
+        videoChannels[p.sid]?.let { session.attachChannel(it) }
         AppState.sessions.value = sessions.size
         session.start()
         updateCarState()
     }
 
-    /** "apps": one virtual display per app (Shizuku, opt-in); "screen": the phone screen. */
-    private fun mode(): String = if (prefs.appsMode && ShizukuBridge.service != null) "apps" else "screen"
+    @Volatile private var appsFailed = false
+
+    /**
+     * "apps": each app on its own car-sized screen (Shizuku running, setting on);
+     * "screen": the phone's own screen (always works).
+     */
+    private fun mode(): String {
+        if (!prefs.appsMode || appsFailed) return "screen"
+        return if (ShizukuBridge.readyOrBind(1500) != null) "apps" else "screen"
+    }
 
     private fun updateCarState() {
         if (closed) return

@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         val lastError by AppState.lastError.collectAsState()
         val cands by AppState.localCandidates.collectAsState()
         val projectionOn by AppState.projection.collectAsState()
+        val shizukuState by AppState.shizuku.collectAsState()
         val touchOnFlow by AppState.touch.collectAsState()
         var touchOn by remember { mutableStateOf(TouchService.isEnabled(this)) }
         var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(this)) }
@@ -154,6 +155,24 @@ class MainActivity : ComponentActivity() {
                                     if (!running) MirrorService.start(this@MainActivity)
                                     Projection.requestConsent(this@MainActivity)
                                 }) { Text("Start sharing") }
+                            }
+                        }
+                        Step(
+                            done = shizukuState == ShizukuState.READY,
+                            title = "Optional: car-sized app screens (Shizuku)",
+                            body = when (shizukuState) {
+                                ShizukuState.READY -> "On: apps open on their own screen at the car's size."
+                                ShizukuState.NOT_INSTALLED -> "Install Shizuku and start it once (needs Wi-Fi for Wireless debugging; it then runs until the phone restarts). Without it, the phone screen is mirrored."
+                                ShizukuState.NOT_RUNNING -> "Shizuku isn't running (phone restarted?). Start it when you're on Wi-Fi. Until then the phone screen is mirrored."
+                                ShizukuState.NO_PERMISSION -> "Allow CarMirror in Shizuku."
+                                else -> ShizukuBridge.describe(shizukuState)
+                            },
+                        ) {
+                            when (shizukuState) {
+                                ShizukuState.NOT_INSTALLED -> OutlinedButton(onClick = { openShizukuStore() }) { Text("Get Shizuku") }
+                                ShizukuState.NOT_RUNNING, ShizukuState.ERROR -> OutlinedButton(onClick = { openShizuku() }) { Text("Open Shizuku") }
+                                ShizukuState.NO_PERMISSION -> Button(onClick = { ShizukuBridge.requestPermission() }) { Text("Allow") }
+                                else -> {}
                             }
                         }
                     }
@@ -247,7 +266,7 @@ class MainActivity : ComponentActivity() {
                         TextButton(onClick = { showAdvanced = !showAdvanced }) { Text(if (showAdvanced) "Hide advanced" else "Advanced") }
                         if (showAdvanced) Advanced()
                         Text(
-                            "Version ${BuildConfig.VERSION_NAME} · scrcpy ${BuildConfig.SCRCPY_VERSION} · built ${BuildConfig.BUILT_AT.take(16)}",
+                            "Version ${BuildConfig.VERSION_NAME} · built ${BuildConfig.BUILT_AT.take(16)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -274,10 +293,10 @@ class MainActivity : ComponentActivity() {
         val shizuku by AppState.shizuku.collectAsState()
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Per-app screens (Shizuku, experimental)")
+                Text("Per-app screens when Shizuku runs")
                 Text(
-                    "Each app on its own car-sized screen, split view, phone stays free. Needs Shizuku running " +
-                        "(Wireless debugging, so Wi-Fi), and crashes on some phones.",
+                    "Each app gets its own screen at the car's exact size (no black bars, split view, phone stays free). " +
+                        "Used automatically while Shizuku is running; otherwise the phone screen is mirrored.",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -309,7 +328,7 @@ class MainActivity : ComponentActivity() {
     private fun Step(done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text((if (done) "✓ " else "○ ") + title, fontWeight = FontWeight.SemiBold, color = if (done) Ok else MaterialTheme.colorScheme.onSurface)
-            if (!done || title == "Share the screen") {
+            if (!done || title == "Share the screen" || title.startsWith("Optional")) {
                 Text(body, style = MaterialTheme.typography.bodySmall)
                 action()
             }

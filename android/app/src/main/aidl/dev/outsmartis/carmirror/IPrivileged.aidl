@@ -1,28 +1,31 @@
 package dev.outsmartis.carmirror;
 
-// Runs as the shell user through Shizuku (see PrivilegedService).
+import android.view.Surface;
+import android.view.MotionEvent;
+import android.view.KeyEvent;
+
+// Runs as the shell user through Shizuku (see PrivilegedService). It only does what needs
+// shell rights: a trusted virtual display, launching apps on it and injecting input there.
+// Video encoding stays in the app process (it crashes in app_process on some phones).
 interface IPrivileged {
     // Shizuku calls this transaction code when the service is unbound/replaced.
     void destroy() = 16777114;
 
-    // Writes the scrcpy server jar where app_process can load it. Returns its path.
-    String installServer(in byte[] jar) = 1;
-
-    // Starts a scrcpy server and returns the loopback TCP port the app must connect to.
-    // The app sends `secret` (1-byte length + bytes) first; then the socket carries the
-    // scrcpy video stream (device -> app) and control messages (app -> device).
-    int startSession(int scid, in String[] args, String secret) = 2;
-
-    void stopSession(int scid) = 3;
-
-    // Last lines printed by the scrcpy server for that session (for error reporting).
-    String sessionLog(int scid) = 4;
-
     int uid() = 5;
 
-    // Runs the scrcpy server for a one-shot query (e.g. list_encoders=true) and returns its output.
-    String runServer(in String[] args) = 6;
+    // A display of the car's size rendering into `surface` (the app's encoder input). Returns its id.
+    int createDisplay(String name, int width, int height, int dpi, in Surface surface) = 10;
 
-    // Tail of Android's crash log buffer (native crash reports), for diagnosing server aborts.
-    String crashLog(int lines) = 7;
+    // New size and/or encoder surface for an existing display (apps relayout to the new size).
+    void resizeDisplay(int displayId, int width, int height, int dpi, in Surface surface) = 11;
+
+    // Apps on it move back to the phone screen.
+    void releaseDisplay(int displayId) = 12;
+
+    // "package/activity", opened (or brought) onto that display.
+    boolean launchOnDisplay(String component, int displayId) = 13;
+
+    boolean injectMotion(in MotionEvent event, int displayId) = 14;
+
+    boolean injectKey(in KeyEvent event, int displayId) = 15;
 }

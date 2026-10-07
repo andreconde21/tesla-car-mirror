@@ -528,7 +528,7 @@ class Pane {
     if (!this.sid || !state.link) return;
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => {
-      const { w, h } = this.targetSize();
+      const { w, h } = this.streamParams();
       if (this.lastSize && Math.abs(this.lastSize.w - w) < 16 && Math.abs(this.lastSize.h - h) < 16) return;
       this.lastSize = { w, h };
       log(`resize ${this.sid} -> ${w}x${h}`);
@@ -548,9 +548,28 @@ class Pane {
       this.degraded = true;
       warn(`phone encoder lagging ${msg.lag} ms: reopening ${this.app.pkg} lighter`);
       toast('The phone is struggling: switching to a lighter stream');
-      const app = this.app;
-      this.open(app, { light: true });
+      this.reconfigure();
     }
+  }
+
+  /** Stream size/settings for this pane (2/3 size at 30 fps once degraded). */
+  streamParams() {
+    let { w, h, dpi } = this.targetSize();
+    if (this.degraded) {
+      w = Math.floor((w * 2) / 3 / 8) * 8;
+      h = Math.floor((h * 2) / 3 / 8) * 8;
+      dpi = Math.round((dpi * 2) / 3);
+    }
+    return { w, h, dpi, fps: this.degraded ? 30 : settings.fps, bitrate: settings.bitrate * 1_000_000 };
+  }
+
+  /** Apply new stream settings to the running app without reopening it. */
+  reconfigure() {
+    if (!this.sid || !state.link) return;
+    const p = this.streamParams();
+    this.lastSize = { w: p.w, h: p.h };
+    log(`reconfigure ${this.sid} -> ${p.w}x${p.h} ${p.fps}fps ${p.bitrate / 1e6}Mbps`);
+    state.link.sendCtl({ t: 'reconfigure', sid: this.sid, ...p });
   }
 
   showStageMsg(text) {
@@ -697,11 +716,8 @@ function setupChrome() {
     for (const p of state.panes) {
       p.setChrome();
       p.applyCrop();
-      // quality applies to the stream: restart what is showing with the new settings
-      if (streamChanged && p.sid && p.app) {
-        log('settings changed: reopening ' + p.app.pkg);
-        p.open(p.app);
-      }
+      // quality applies to the stream right away, without reopening the app
+      if (streamChanged && p.sid) p.reconfigure();
     }
     if (dlg.returnValue === 'forget') {
       if (confirm('Unpair this car? You will need a new code from the phone.')) {

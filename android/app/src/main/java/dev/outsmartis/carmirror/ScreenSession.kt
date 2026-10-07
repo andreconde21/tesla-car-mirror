@@ -32,8 +32,8 @@ class ScreenSession(
     override val pkg: String,
     private var carW: Int,
     private var carH: Int,
-    private val fps: Int,
-    private val bitrate: Int,
+    private var fps: Int,
+    private var bitrate: Int,
     private val onStarted: (ScreenSession) -> Unit,
     private val onEnded: (ScreenSession, String?) -> Unit,
     private val onStats: (ScreenSession, Long, Int) -> Unit,
@@ -258,6 +258,14 @@ class ScreenSession(
 
     override fun requestKeyFrame() {
         keyRequested = true
+    }
+
+    override fun reconfigure(w: Int, h: Int, dpi: Int, fps: Int, bitrate: Int) {
+        carW = w
+        carH = h
+        this.fps = fps
+        this.bitrate = bitrate
+        restart = true
     }
 
     override fun stop() {

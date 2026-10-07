@@ -15,6 +15,8 @@ interface CarSession {
     fun key(name: String)
     fun resize(w: Int, h: Int)
     fun requestKeyFrame()
+    /** New stream settings without reopening the app (quality change, lighter stream). */
+    fun reconfigure(w: Int, h: Int, dpi: Int, fps: Int, bitrate: Int)
     /** Diagnostic output to ship to the car when the session failed. */
     val fullLog: String?
 }

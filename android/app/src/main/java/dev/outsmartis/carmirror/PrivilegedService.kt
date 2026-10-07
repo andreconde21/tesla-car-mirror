@@ -1,247 +1,154 @@
 package dev.outsmartis.carmirror
 
-import android.net.LocalServerSocket
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
+import android.annotation.SuppressLint
+import android.content.AttributionSource
+import android.content.Context
+import android.content.ContextWrapper
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.hardware.input.InputManager
+import android.os.Build
+import android.os.IBinder
 import android.util.Log
-import java.io.DataInputStream
-import java.io.File
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.security.MessageDigest
+import android.view.InputEvent
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.Surface
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.concurrent.thread
+import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
 /**
- * Shizuku "user service": runs in a separate process as the shell user (uid 2000), the
- * same privilege level as `adb shell`. That is what lets the scrcpy server create a
- * virtual display, launch any app on it and inject touches there.
+ * Shizuku "user service": runs in its own process as the shell user (uid 2000), the rights of
+ * `adb shell`. That's what lets it create a *trusted* virtual display, start any app on it and
+ * inject touches there; a normal app can only do that for its own activities.
  *
- * This process is a dumb, authenticated pipe: per session it
- *  1. listens on the abstract socket scrcpy connects to (tunnel_forward=false),
- *  2. starts the scrcpy server with app_process,
- *  3. listens on a loopback TCP port for the CarMirror app (which can't talk to the
- *     shell's unix socket itself because of SELinux), checks the shared secret,
- *  4. copies video scrcpy -> app and control app -> scrcpy.
+ * The techniques (a context that presents itself as com.android.shell, the display flags,
+ * InputEvent.setDisplayId) follow scrcpy's server (Apache 2.0). Unlike scrcpy, nothing is
+ * encoded here: the app encodes into its own MediaCodec surface and passes that surface in.
  */
 class PrivilegedService : IPrivileged.Stub() {
+    private val tag = "CarMirrorPriv"
+    private val displays = ConcurrentHashMap<Int, VirtualDisplay>()
 
-    private val sessions = ConcurrentHashMap<Int, Session>()
+    init {
+        if (Build.VERSION.SDK_INT >= 28) runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
+    }
 
     override fun destroy() {
-        sessions.values.forEach { it.stop("service destroyed") }
+        displays.values.forEach { runCatching { it.release() } }
         exitProcess(0)
     }
 
-    override fun installServer(jar: ByteArray): String {
-        val dir = File(DIR)
-        dir.mkdirs()
-        dir.setReadable(true, false)
-        dir.setExecutable(true, false)
-        val f = File(dir, "scrcpy-server.jar")
-        if (!f.exists() || !sha(f.readBytes()).contentEquals(sha(jar))) {
-            f.writeBytes(jar)
-        }
-        f.setReadable(true, false)
-        return f.absolutePath
-    }
-
-    override fun startSession(scid: Int, args: Array<String>, secret: String): Int {
-        sessions.remove(scid)?.stop("restarted")
-        val s = Session(scid, args.toList(), secret) { sessions.remove(scid, it) }
-        sessions[scid] = s
-        return s.start()
-    }
-
-    override fun stopSession(scid: Int) {
-        sessions.remove(scid)?.stop("stopped by app")
-    }
-
-    override fun sessionLog(scid: Int): String = Session.logs[scid]?.let { synchronized(it) { it.joinToString("\n") } } ?: ""
-
     override fun uid(): Int = android.os.Process.myUid()
 
-    override fun runServer(args: Array<String>): String {
-        val master = File(DIR, "scrcpy-server.jar")
-        val jar = File(DIR, "scrcpy-query.jar")
-        master.copyTo(jar, overwrite = true)
-        jar.setReadable(true, false)
-        val pb = ProcessBuilder(listOf("app_process", "/", "com.genymobile.scrcpy.Server") + args).redirectErrorStream(true)
-        pb.environment()["CLASSPATH"] = jar.absolutePath
-        val p = pb.start()
-        val out = StringBuilder()
-        val reader = thread { runCatching { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } } }
-        if (!p.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly()
-        reader.join(1000)
-        return out.toString()
+    override fun createDisplay(name: String, width: Int, height: Int, dpi: Int, surface: Surface): Int {
+        var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
+            FLAG_SUPPORTS_TOUCH or FLAG_ROTATES_WITH_CONTENT
+        if (Build.VERSION.SDK_INT >= 33) {
+            flags = flags or FLAG_TRUSTED or FLAG_OWN_DISPLAY_GROUP or FLAG_ALWAYS_UNLOCKED or FLAG_TOUCH_FEEDBACK_DISABLED
+        }
+        if (Build.VERSION.SDK_INT >= 34) flags = flags or FLAG_OWN_FOCUS or FLAG_DEVICE_DISPLAY_GROUP
+        val vd = displayManager().createVirtualDisplay(name, width, height, dpi, surface, flags)
+            ?: throw IllegalStateException("createVirtualDisplay returned null")
+        val id = vd.display.displayId
+        displays[id] = vd
+        setImeLocal(id)
+        Log.i(tag, "display $id ${width}x$height/$dpi")
+        return id
     }
 
-    override fun crashLog(lines: Int): String = try {
-        val p = ProcessBuilder("logcat", "-d", "-b", "crash", "-t", lines.toString()).redirectErrorStream(true).start()
-        val text = p.inputStream.bufferedReader().readText()
-        p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
-        text
+    override fun resizeDisplay(displayId: Int, width: Int, height: Int, dpi: Int, surface: Surface) {
+        val vd = displays[displayId] ?: throw IllegalStateException("unknown display $displayId")
+        vd.resize(width, height, dpi)
+        vd.surface = surface
+    }
+
+    override fun releaseDisplay(displayId: Int) {
+        displays.remove(displayId)?.release()
+    }
+
+    override fun launchOnDisplay(component: String, displayId: Int): Boolean {
+        // `am` does the ActivityOptions.setLaunchDisplayId() dance for us, with shell rights
+        val p = ProcessBuilder(
+            "am", "start", "--display", displayId.toString(),
+            "-f", "0x10000000", // NEW_TASK: brings a running app's task over to this display
+            "-n", component,
+        ).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        p.waitFor(10, TimeUnit.SECONDS)
+        Log.i(tag, "launch $component on $displayId: ${out.trim()}")
+        return !out.contains("Error")
+    }
+
+    override fun injectMotion(event: MotionEvent, displayId: Int): Boolean = inject(event, displayId)
+
+    override fun injectKey(event: KeyEvent, displayId: Int): Boolean = inject(event, displayId)
+
+    private fun inject(event: InputEvent, displayId: Int): Boolean = try {
+        InputEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType).invoke(event, displayId)
+        val im = shellContext().getSystemService(Context.INPUT_SERVICE) as InputManager
+        InputManager::class.java.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
+            .invoke(im, event, INJECT_ASYNC) as Boolean
     } catch (e: Exception) {
-        "logcat failed: $e"
+        Log.w(tag, "inject failed: $e")
+        false
     }
 
-    companion object {
-        const val DIR = "/data/local/tmp/carmirror"
-        private fun sha(b: ByteArray) = MessageDigest.getInstance("SHA-256").digest(b)
-    }
-}
-
-private class Session(
-    private val scid: Int,
-    private val args: List<String>,
-    private val secret: String,
-    private val onEnd: (Session) -> Unit,
-) {
-    private val socketName = "scrcpy_%08x".format(scid)
-    private lateinit var local: LocalServerSocket
-    private lateinit var tcp: ServerSocket
-    private var proc: Process? = null
-    private var jarFile: File? = null
-    private val closeables = mutableListOf<AutoCloseable>()
-    @Volatile private var stopped = false
-    private val log = ArrayDeque<String>()
-
-    init {
-        logs[scid] = log
-    }
-
-    fun addLog(line: String) {
-        synchronized(log) {
-            log.addLast(line)
-            while (log.size > 200) log.removeFirst()
-        }
-        Log.i(TAG, "[$socketName] $line")
-    }
-
-    fun start(): Int {
-        local = LocalServerSocket(socketName)
-        tcp = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
-        tcp.soTimeout = 20_000
-
-        // Each session runs its own copy: scrcpy's cleanup deletes the jar it was started
-        // from when it exits, which would break a session starting at that moment.
-        val master = File(PrivilegedService.DIR, "scrcpy-server.jar")
-        val jarFile = File(PrivilegedService.DIR, "scrcpy-$socketName.jar")
-        master.copyTo(jarFile, overwrite = true)
-        jarFile.setReadable(true, false)
-        this.jarFile = jarFile
-        val jar = jarFile.absolutePath
-        val cmd = listOf("app_process", "/", "com.genymobile.scrcpy.Server") + args
-        addLog("exec: ${cmd.joinToString(" ")}")
-        val pb = ProcessBuilder(cmd).redirectErrorStream(true)
-        pb.environment()["CLASSPATH"] = jar
-        val p = pb.start()
-        proc = p
-
-        thread(name = "log-$socketName") {
-            try {
-                p.inputStream.bufferedReader().forEachLine { addLog(it) }
-            } catch (_: Exception) {
-            }
-            val code = try { p.waitFor() } catch (_: Exception) { -1 }
-            addLog("server exited ($code)")
-            runCatching { jarFile?.delete() }
-            stop("server exited ($code)")
-        }
-        thread(name = "accept-$socketName") { acceptAndPipe() }
-        return tcp.localPort
-    }
-
-    private fun acceptAndPipe() {
-        try {
-            val client = tcp.accept()
-            closeables += client
-            client.tcpNoDelay = true
-            client.soTimeout = 0
-            val din = DataInputStream(client.getInputStream())
-            val len = din.readUnsignedByte()
-            val got = ByteArray(len).also { din.readFully(it) }
-            if (!MessageDigest.isEqual(got, secret.toByteArray())) {
-                addLog("bad secret from client")
-                stop("bad secret")
-                return
-            }
-            tcp.close()
-
-            val video = local.accept()
-            closeables += video
-            val control = local.accept()
-            closeables += control
-            local.close()
-            addLog("scrcpy connected")
-
-            pipe("video-$socketName", video.inputStream, client.getOutputStream())
-            pipe("control-$socketName", din, control.outputStream)
-            // device -> client control messages (clipboard etc.) are not used: drain them
-            thread(name = "drain-$socketName") {
-                try {
-                    val buf = ByteArray(4096)
-                    while (control.inputStream.read(buf) >= 0) { /* discard */ }
-                } catch (_: Exception) {
-                }
-            }
-        } catch (e: Exception) {
-            if (!stopped) addLog("accept failed: $e")
-            stop("accept failed")
-        }
-    }
-
-    private fun pipe(name: String, input: InputStream, output: OutputStream) {
-        thread(name = name) {
-            val buf = ByteArray(256 * 1024)
-            try {
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    output.write(buf, 0, n)
-                    output.flush()
-                }
-            } catch (_: Exception) {
-            }
-            stop("$name ended")
-        }
-    }
-
-    @Synchronized
-    fun stop(reason: String) {
-        if (stopped) return
-        stopped = true
-        addLog("stop: $reason")
-        closeables.forEach { runCatching { it.close() } }
-        runCatching { tcp.close() }
-        // LocalServerSocket.accept() is not interrupted by close() on every Android version:
-        // poke it with a connection first.
+    /** Keyboard on the car display, not on the phone. */
+    private fun setImeLocal(displayId: Int) {
         runCatching {
-            LocalSocket().use { it.connect(LocalSocketAddress(socketName)) }
-        }
-        runCatching { local.close() }
-        proc?.let { p ->
-            runCatching { p.destroy() }
-            thread {
-                if (runCatching { !p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) }.getOrDefault(true)) {
-                    runCatching { p.destroyForcibly() }
-                }
-            }
-        }
-        onEnd(this)
+            val sm = Class.forName("android.os.ServiceManager")
+            val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
+            val wm = Class.forName("android.view.IWindowManager\$Stub").getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+            wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+                .invoke(wm, displayId, 0 /* DISPLAY_IME_POLICY_LOCAL */)
+        }.onFailure { Log.w(tag, "IME policy: $it") }
+    }
+
+    private fun displayManager(): DisplayManager {
+        val ctor = DisplayManager::class.java.getDeclaredConstructor(Context::class.java)
+        ctor.isAccessible = true
+        return ctor.newInstance(shellContext())
     }
 
     companion object {
-        private const val TAG = "CarMirrorPriv"
-        // logs of the last few sessions, oldest evicted first
-        val logs: MutableMap<Int, ArrayDeque<String>> = java.util.Collections.synchronizedMap(
-            object : LinkedHashMap<Int, ArrayDeque<String>>() {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, ArrayDeque<String>>) = size > 8
-            },
-        )
+        private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
+        private const val FLAG_ROTATES_WITH_CONTENT = 1 shl 7
+        private const val FLAG_TRUSTED = 1 shl 10
+        private const val FLAG_OWN_DISPLAY_GROUP = 1 shl 11
+        private const val FLAG_ALWAYS_UNLOCKED = 1 shl 12
+        private const val FLAG_TOUCH_FEEDBACK_DISABLED = 1 shl 13
+        private const val FLAG_OWN_FOCUS = 1 shl 14
+        private const val FLAG_DEVICE_DISPLAY_GROUP = 1 shl 15
+        private const val INJECT_ASYNC = 0
+
+        @Volatile private var context: Context? = null
+
+        /** A system context that identifies itself as com.android.shell (our uid), as system services require. */
+        @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
+        fun shellContext(): Context {
+            context?.let { return it }
+            val at = Class.forName("android.app.ActivityThread")
+            var thread = at.getMethod("currentActivityThread").invoke(null)
+            if (thread == null) {
+                thread = at.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+                at.getDeclaredField("sCurrentActivityThread").apply { isAccessible = true }.set(null, thread)
+                at.getDeclaredField("mSystemThread").apply { isAccessible = true }.setBoolean(thread, true)
+            }
+            val system = at.getDeclaredMethod("getSystemContext").invoke(thread) as Context
+            val shell = object : ContextWrapper(system) {
+                override fun getPackageName() = "com.android.shell"
+                override fun getOpPackageName() = "com.android.shell"
+                override fun getAttributionSource(): AttributionSource =
+                    AttributionSource.Builder(2000).setPackageName("com.android.shell").build()
+                override fun getApplicationContext(): Context = this
+            }
+            context = shell
+            return shell
+        }
     }
 }

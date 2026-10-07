@@ -1,11 +1,13 @@
 # CarMirror
 
-> **Two modes.** *Screen* (default since 1.1.0): the phone's screen is mirrored with the
-> standard screen-recording API and touches go through an accessibility service. It needs no
-> Shizuku, so no Wi-Fi/wireless debugging on the road; the trade-offs are that the phone screen
-> stays on and there's one app at a time. *Per-app screens* (Advanced, experimental): each app
-> on its own virtual display through Shizuku + scrcpy, as described below. It crashed natively
-> on a Galaxy M53 / Android 16 with scrcpy-server 4.1.
+> **Two modes, chosen automatically.** *Per-app screens* (1.3.0+) whenever Shizuku is running:
+> the Shizuku service (shell uid) creates a trusted virtual display around the app's own
+> MediaCodec input surface, launches the app on it (`am start --display`) and injects input
+> (`InputEvent.setDisplayId`); encoding stays in the app process. Each app gets the car pane's
+> exact size and relayouts live on resize/split/fullscreen. Otherwise *Screen* mode: the phone
+> screen via MediaProjection + accessibility gestures, with focus mode cropping the system bars.
+> scrcpy-server is no longer used: it aborted natively inside MediaCodec on a Galaxy M53 /
+> Android 16, while plain in-app MediaCodec works there.
 >
 > **Hotspot gotcha:** libwebrtc on Android never offered the hotspot address as an ICE
 > candidate, so the phone relays a UDP port on all interfaces to libwebrtc's loopback

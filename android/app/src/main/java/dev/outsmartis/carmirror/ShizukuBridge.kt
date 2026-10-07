@@ -114,15 +114,12 @@ object ShizukuBridge {
         return withTimeoutOrNull(timeoutMs) { d.await() }
     }
 
-    private val serverJar: ByteArray by lazy { appContext.assets.open("scrcpy-server.jar").use { it.readBytes() } }
 
-    /**
-     * Copy the bundled scrcpy server where the shell user can run it. Done before every
-     * session: scrcpy's cleanup process deletes the jar when a session ends.
-     */
-    @Synchronized
-    fun ensureServerInstalled(s: IPrivileged) {
-        s.installServer(serverJar)
+    /** The privileged service if Shizuku is running and allowed (binding it, briefly waiting, if needed). */
+    fun readyOrBind(timeoutMs: Long): IPrivileged? {
+        service?.let { return it }
+        if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return null
+        return kotlinx.coroutines.runBlocking { awaitService(timeoutMs) }
     }
 
     fun describe(state: ShizukuState): String = when (state) {

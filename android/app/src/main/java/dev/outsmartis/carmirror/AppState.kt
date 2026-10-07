@@ -44,10 +44,10 @@ class Prefs(context: Context) {
         get() = sp.getStringSet("favorites", null)
         set(v) = sp.edit().putStringSet("favorites", v).apply()
 
-    /** Per-app virtual displays through Shizuku (experimental) instead of mirroring the phone screen. */
+    /** Per-app car-sized screens whenever Shizuku is running (else the phone screen is mirrored). */
     var appsMode: Boolean
-        get() = sp.getBoolean("appsMode", false)
-        set(v) = sp.edit().putBoolean("appsMode", v).apply()
+        get() = sp.getBoolean("appsMode2", true)
+        set(v) = sp.edit().putBoolean("appsMode2", v).apply()
 
     var startOnLaunch: Boolean
         get() = sp.getBoolean("startOnLaunch", true)

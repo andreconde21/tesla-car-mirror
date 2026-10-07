@@ -6,8 +6,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val scrcpyVersion = "4.1"
-
 android {
     namespace = "dev.outsmartis.carmirror"
     compileSdk = 36
@@ -18,7 +16,6 @@ android {
         targetSdk = 36
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (project.findProperty("versionName") as String?) ?: "1.0.0"
-        buildConfigField("String", "SCRCPY_VERSION", "\"$scrcpyVersion\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"https://carmirror.outsmartis.dev\"")
         buildConfigField("String", "BUILT_AT", "\"${Instant.now()}\"")
         ndk {
@@ -84,6 +81,7 @@ dependencies {
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 
     implementation("io.getstream:stream-webrtc-android:1.3.10")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
