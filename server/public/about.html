@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="CarMirror puts your Android phone's apps on the Tesla screen: fast, direct over your hotspot, built to keep playing while you drive.">
+  <title>CarMirror</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    body { overflow: auto; }
+    .doc { max-width: 760px; margin: 0 auto; padding: 32px 16px 80px; }
+    .hero { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+    .hero img { width: 56px; height: 56px; }
+    .doc h1 { font-size: 34px; margin: 0; }
+    .lead { font-size: 19px; color: var(--muted); margin: 8px 0 24px; }
+    .doc h2 { margin: 40px 0 12px; font-size: 23px; }
+    .doc h3 { margin: 22px 0 6px; font-size: 18px; }
+    .doc p, .doc li { line-height: 1.6; }
+    .doc ol li, .doc ul li { margin-bottom: 8px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 8px; }
+    .cta a { text-decoration: none; display: inline-flex; align-items: center; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-top: 12px; }
+    .feature { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+    .feature b { display: block; margin-bottom: 4px; }
+    .feature span { color: var(--muted); font-size: 15px; line-height: 1.5; }
+    .flow { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; font-size: 15px; line-height: 1.7; }
+    .flow b { color: var(--accent); }
+    .note { border-left: 3px solid var(--warn); padding: 4px 14px; color: var(--muted); }
+    code { background: var(--panel-2); padding: 2px 6px; border-radius: 6px; font-size: 0.92em; }
+    a { color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .foot { margin-top: 48px; color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="hero">
+      <img src="/icon.svg" alt="">
+      <h1>CarMirror</h1>
+    </div>
+    <p class="lead">Your Android phone's apps on the Tesla screen. Direct over your hotspot, low lag, and built to keep playing while you drive.</p>
+    <div class="cta">
+      <a class="btn primary" href="/get">Get the app</a>
+      <a class="btn" href="https://github.com/andreconde21/tesla-car-mirror">Source on GitHub</a>
+    </div>
+
+    <h2>What it does</h2>
+    <div class="features">
+      <div class="feature"><b>Any Android app</b><span>YouTube for the passenger, navigation, music, your own apps. Pick which ones show up in the car.</span></div>
+      <div class="feature"><b>Fast</b><span>Video goes straight from the phone to the car over the hotspot, decoded in hardware. No cloud relay in the way.</span></div>
+      <div class="feature"><b>Touch works</b><span>Tap, swipe, type: the car screen controls the phone. The keyboard shows up on the car screen.</span></div>
+      <div class="feature"><b>Made for driving</b><span>The picture is drawn on a canvas, not a video player, which is what the browser blocks while the car moves.</span></div>
+      <div class="feature"><b>Car-sized apps</b><span>With Shizuku running, each app gets its own screen at the Tesla's exact size, and split view for two apps side by side.</span></div>
+      <div class="feature"><b>Focus mode</b><span>Hides the phone's status bar, navigation bar and home screen, so only the app shows.</span></div>
+    </div>
+
+    <h2>What you need</h2>
+    <ul>
+      <li>An Android phone (Android 11 or newer) with mobile data and a hotspot.</li>
+      <li>A Tesla with the in-car browser. Tested on a 2023 Model Y; newer Teslas with the AMD computer work best.</li>
+      <li>Optional: <a href="https://github.com/RikkaApps/Shizuku/releases">Shizuku</a> for car-sized app screens and split view.</li>
+    </ul>
+
+    <h2>Setup on the phone (once, about 5 minutes)</h2>
+    <ol>
+      <li><b>Install the app</b> from <a href="/get">the download page</a>. Your browser will ask to allow installing apps from it.</li>
+      <li><b>Open CarMirror</b> and follow "1 · Phone setup":
+        <ul>
+          <li><b>Touch from the car:</b> Settings → Accessibility → Installed apps → CarMirror → on.
+            If the switch is greyed out: App info → <b>⋮</b> (top right) → <b>Allow restricted settings</b>, then try again.
+            (Android asks this for apps not installed from the Play Store.)</li>
+          <li><b>Open apps from the car:</b> allow "Display over other apps".</li>
+        </ul>
+      </li>
+      <li><b>Pick your apps</b> in "3 · Apps shown in the car".</li>
+      <li>Optional, for car-sized screens: install Shizuku and start it with <b>Wireless debugging</b> (needs Wi-Fi, once after every phone restart). Then tap <b>Allow</b> in CarMirror.</li>
+      <li>Tip: on Samsung, a Modes &amp; Routines rule "when connected to the car's Bluetooth → turn on hotspot" makes every drive hands-free.</li>
+    </ol>
+
+    <h2>In the car</h2>
+    <ol>
+      <li>Turn on the phone's hotspot and connect the car to it (car Wi-Fi settings).</li>
+      <li>Open the car's browser at <code>carmirror.outsmartis.dev</code>.</li>
+      <li>The first time, type the 6-digit code shown in the phone app. The car stays paired after that.</li>
+      <li>Tap an app. Without Shizuku, the phone asks once per drive to share its screen: tap <b>Start now</b>.</li>
+    </ol>
+    <p>In the car: <b>Hide bars</b> gives the app the whole screen, <b>Fullscreen</b> hides the browser's own bars, and <b>Settings</b> has video quality, frame rate and focus mode. Sound plays from the phone, so connect the phone to the car over Bluetooth.</p>
+
+    <h2>Two modes</h2>
+    <table>
+      <tr><th></th><th>Phone screen (default)</th><th>Car-sized screens (Shizuku running)</th></tr>
+      <tr><td>Setup</td><td>Nothing extra</td><td>Shizuku started once after each phone restart (needs Wi-Fi)</td></tr>
+      <tr><td>Picture</td><td>What the phone shows. Turn it sideways for wide apps such as YouTube</td><td>Each app at the car's exact size, no black bars</td></tr>
+      <tr><td>Apps at once</td><td>One</td><td>Two, side by side (Split)</td></tr>
+      <tr><td>Phone screen</td><td>Stays on, showing the app</td><td>Free, or locked in your pocket</td></tr>
+    </table>
+    <p>CarMirror picks the mode by itself: car-sized screens when Shizuku is running, the phone screen otherwise.</p>
+
+    <h2>How it works</h2>
+    <div class="flow">
+      <b>Phone</b>: the app encodes the picture as H.264 in hardware →
+      <b>WebRTC</b> sends it directly over the hotspot (the server only introduces the car and the phone) →
+      <b>Tesla browser</b>: WebCodecs decodes in hardware and draws on a canvas → your taps go back the same way.
+    </div>
+    <p>Nothing you watch goes through the server. It only handles pairing and helps the two find each other.</p>
+
+    <h2>Good to know</h2>
+    <ul>
+      <li>Apps that block screenshots (banking, Netflix and similar) show black. That's the app's choice and can't be worked around.</li>
+      <li>The car must be on the phone's hotspot. Over the car's own LTE, the phone can't be reached directly.</li>
+      <li>Video uses no mobile data: it stays between the phone and the car.</li>
+      <li>Watching video while driving is the passenger's job. Follow your local laws.</li>
+      <li>This is a hobby project, built in a few days and offered as is.</li>
+    </ul>
+
+    <h2>Something not working?</h2>
+    <ul>
+      <li>Open <code>carmirror.outsmartis.dev/diag</code> in the car: it checks what the browser supports.</li>
+      <li>In the phone app, "Last problem" shows the most recent error.</li>
+      <li>Report issues on <a href="https://github.com/andreconde21/tesla-car-mirror/issues">GitHub</a>.</li>
+    </ul>
+
+    <p class="foot">CarMirror · <a href="/get">Download</a> · <a href="https://github.com/andreconde21/tesla-car-mirror">GitHub</a></p>
+  </div>
+</body>
+</html>

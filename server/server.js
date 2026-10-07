@@ -168,6 +168,7 @@ const server = http.createServer(async (req, res) => {
   let rel = p === '/' ? '/index.html' : p;
   if (rel === '/diag') rel = '/diag.html';
   if (rel === '/get') rel = '/get.html';
+  if (rel === '/about') rel = '/about.html';
   const file = path.normalize(path.join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
