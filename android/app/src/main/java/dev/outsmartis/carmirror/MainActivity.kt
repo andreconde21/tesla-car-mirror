@@ -85,6 +85,10 @@ class MainActivity : ComponentActivity() {
         val car by AppState.car.collectAsState()
         val lastError by AppState.lastError.collectAsState()
         val cands by AppState.localCandidates.collectAsState()
+        val projectionOn by AppState.projection.collectAsState()
+        val touchOnFlow by AppState.touch.collectAsState()
+        var touchOn by remember { mutableStateOf(TouchService.isEnabled(this)) }
+        var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(this)) }
         var addresses by remember { mutableStateOf(localAddresses()) }
         val allApps = remember { Apps.launchable(this) }
         var favorites by remember { mutableStateOf(Apps.favorites(this, prefs).map { it.pkg }.toSet()) }
@@ -94,6 +98,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             while (true) {
                 addresses = localAddresses()
+                touchOn = touchOnFlow || TouchService.isEnabled(this@MainActivity)
+                overlayOn = Settings.canDrawOverlays(this@MainActivity)
                 ShizukuBridge.refresh()
                 delay(3000)
             }
@@ -110,22 +116,45 @@ class MainActivity : ComponentActivity() {
                     Text("Your phone's apps on the car screen", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                // 1. Shizuku
+                // 1. Phone setup (no Shizuku needed)
                 item {
-                    Section("1 · Phone access (Shizuku)") {
-                        Text(ShizukuBridge.describe(shizuku), color = if (shizuku == ShizukuState.READY) Ok else MaterialTheme.colorScheme.onSurface)
-                        when (shizuku) {
-                            ShizukuState.NOT_INSTALLED -> Button(onClick = { openShizukuStore() }) { Text("Get Shizuku") }
-                            ShizukuState.NOT_RUNNING, ShizukuState.ERROR -> Button(onClick = { openShizuku() }) { Text("Open Shizuku") }
-                            ShizukuState.NO_PERMISSION -> Button(onClick = { ShizukuBridge.requestPermission() }) { Text("Grant Shizuku access") }
-                            else -> {}
+                    Section("1 · Phone setup") {
+                        Step(
+                            done = touchOn,
+                            title = "Touch from the car",
+                            body = "Turn on CarMirror under Settings → Accessibility → Installed apps. " +
+                                "If the switch is greyed out: App info → ⋮ (top right) → Allow restricted settings, then try again.",
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) { Text("Accessibility") }
+                                OutlinedButton(onClick = {
+                                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                                }) { Text("App info") }
+                            }
                         }
-                        if (shizuku != ShizukuState.READY) {
-                            Text(
-                                "Shizuku gives CarMirror the same rights as a USB debugging session, without root. " +
-                                    "Start it once with Wireless debugging; after a phone reboot, open Shizuku and tap Start again.",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                        Step(
+                            done = overlayOn,
+                            title = "Open apps from the car",
+                            body = "Allow \"Display over other apps\", so tapping an app in the car opens it on the phone.",
+                        ) {
+                            OutlinedButton(onClick = {
+                                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                            }) { Text("Allow") }
+                        }
+                        Step(
+                            done = projectionOn,
+                            title = "Share the screen",
+                            body = if (projectionOn) "Sharing. It stays on until you stop it or stop CarMirror."
+                            else "Once per drive. The car also asks for it the first time you open an app; then tap Start now on the phone.",
+                        ) {
+                            if (projectionOn) {
+                                OutlinedButton(onClick = { Projection.stop() }) { Text("Stop sharing") }
+                            } else {
+                                Button(onClick = {
+                                    if (!running) MirrorService.start(this@MainActivity)
+                                    Projection.requestConsent(this@MainActivity)
+                                }) { Text("Start sharing") }
+                            }
                         }
                     }
                 }
@@ -206,6 +235,7 @@ class MainActivity : ComponentActivity() {
                     Section("Tips") {
                         Text(
                             "• The car must be on this phone's hotspot (not its own LTE) for a direct, smooth link.\n" +
+                                "• The car shows the phone's screen: turn the phone sideways for a full-width picture (YouTube).\n" +
                                 "• Sound plays from the phone: connect it to the car over Bluetooth.\n" +
                                 "• Keep the phone charging on long drives: encoding video is work.\n" +
                                 "• Apps that block screenshots (banking, Netflix) show black.",
@@ -240,12 +270,49 @@ class MainActivity : ComponentActivity() {
                 window.decorView.postDelayed({ MirrorService.start(this@MainActivity) }, 800)
             }) { Text("Save & restart") }
         }
+        var appsMode by remember { mutableStateOf(prefs.appsMode) }
+        val shizuku by AppState.shizuku.collectAsState()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Per-app screens (Shizuku, experimental)")
+                Text(
+                    "Each app on its own car-sized screen, split view, phone stays free. Needs Shizuku running " +
+                        "(Wireless debugging, so Wi-Fi), and crashes on some phones.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(checked = appsMode, onCheckedChange = {
+                appsMode = it
+                prefs.appsMode = it
+                if (it) ShizukuBridge.bindIfPossible()
+            })
+        }
+        if (appsMode) {
+            Text("Shizuku: " + ShizukuBridge.describe(shizuku), style = MaterialTheme.typography.bodySmall)
+            when (shizuku) {
+                ShizukuState.NOT_INSTALLED -> OutlinedButton(onClick = { openShizukuStore() }) { Text("Get Shizuku") }
+                ShizukuState.NOT_RUNNING, ShizukuState.ERROR -> OutlinedButton(onClick = { openShizuku() }) { Text("Open Shizuku") }
+                ShizukuState.NO_PERMISSION -> OutlinedButton(onClick = { ShizukuBridge.requestPermission() }) { Text("Grant Shizuku access") }
+                else -> {}
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Start when the app opens", modifier = Modifier.weight(1f))
             Switch(checked = autostart, onCheckedChange = {
                 autostart = it
                 prefs.startOnLaunch = it
             })
+        }
+    }
+
+    @Composable
+    private fun Step(done: Boolean, title: String, body: String, action: @Composable () -> Unit) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text((if (done) "✓ " else "○ ") + title, fontWeight = FontWeight.SemiBold, color = if (done) Ok else MaterialTheme.colorScheme.onSurface)
+            if (!done || title == "Share the screen") {
+                Text(body, style = MaterialTheme.typography.bodySmall)
+                action()
+            }
         }
     }
 

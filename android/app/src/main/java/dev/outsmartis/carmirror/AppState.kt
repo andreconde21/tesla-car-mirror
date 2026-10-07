@@ -19,6 +19,8 @@ object AppState {
     val sessions = MutableStateFlow(0)
     val lastError = MutableStateFlow<String?>(null)
     val localCandidates = MutableStateFlow<List<String>>(emptyList())
+    val projection = MutableStateFlow(false)
+    val touch = MutableStateFlow(false)
 }
 
 class Prefs(context: Context) {
@@ -41,6 +43,11 @@ class Prefs(context: Context) {
     var favorites: Set<String>?
         get() = sp.getStringSet("favorites", null)
         set(v) = sp.edit().putStringSet("favorites", v).apply()
+
+    /** Per-app virtual displays through Shizuku (experimental) instead of mirroring the phone screen. */
+    var appsMode: Boolean
+        get() = sp.getBoolean("appsMode", false)
+        set(v) = sp.edit().putBoolean("appsMode", v).apply()
 
     var startOnLaunch: Boolean
         get() = sp.getBoolean("startOnLaunch", true)

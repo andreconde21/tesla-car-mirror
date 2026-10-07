@@ -5,4 +5,5 @@
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
     </style>
+    <style name="Theme.CarMirror.Transparent" parent="android:Theme.Translucent.NoTitleBar" />
 </resources>

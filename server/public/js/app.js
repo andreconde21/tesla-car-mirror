@@ -51,7 +51,7 @@ const state = {
 const screens = ['pair', 'msg', 'panes'];
 function show(name) {
   for (const s of screens) $('#screen-' + s).hidden = s !== name;
-  $('#btn-layout').hidden = name !== 'panes';
+  $('#btn-layout').hidden = name !== 'panes' || state.mode === 'screen';
   $('#btn-immersive').hidden = name !== 'panes';
 }
 
@@ -274,6 +274,12 @@ function onCtl(msg) {
       else toast(msg.msg, 7000);
       break;
     }
+    case 'caps':
+      state.mode = msg.mode;
+      log('phone mode ' + msg.mode);
+      if (msg.mode === 'screen' && state.layout === 'split') setLayout('full');
+      $('#btn-layout').hidden = msg.mode === 'screen';
+      break;
     case 'stats': {
       const pane = state.panes.find((p) => p.sid === msg.sid);
       if (pane) pane.onPhoneStats(msg);
@@ -415,6 +421,12 @@ class Pane {
     this.launcher.hidden = true;
     this.stage.hidden = false;
     this.showStageMsg(`Opening ${app.label}…`);
+    clearTimeout(this.hintTimer);
+    this.hintTimer = setTimeout(() => {
+      if (this.sid === sid && !this.player?.gotFirstFrame) {
+        this.showStageMsg(`Opening ${app.label}… If the phone asks to share its screen, tap "Start now" on the phone.`);
+      }
+    }, 4000);
     this.player = new Player(this.canvas, {
       onInput: (m) => state.link?.sendCtl({ ...m, sid }),
       onKeyframeRequest: (why) => {

@@ -46,6 +46,7 @@ class MirrorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         prefs = Prefs(this)
         factory = PeerConnectionFactory.builder()
             .setOptions(
@@ -84,6 +85,8 @@ class MirrorService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
+        Projection.stop()
         stopped = true
         peer?.close("service stopped")
         ws?.close(1000, "bye")
@@ -225,11 +228,24 @@ class MirrorService : Service() {
         }
     }
 
+    /** Android 14+: a MediaProjection needs the service to run with the mediaProjection type. */
+    fun enableProjectionType() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification("Sharing the screen with the car"),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+            )
+        }
+    }
+
     private fun updateNotification(text: String) {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     companion object {
+        @Volatile var instance: MirrorService? = null
+            private set
         private const val CHANNEL = "carmirror"
         private const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "dev.outsmartis.carmirror.STOP"

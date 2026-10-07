@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="touch_service_description">Lets CarMirror pass your taps and swipes on the car screen to the phone. It does not read what is on the screen.</string>
+</resources>

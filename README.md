@@ -1,5 +1,16 @@
 # CarMirror
 
+> **Two modes.** *Screen* (default since 1.1.0): the phone's screen is mirrored with the
+> standard screen-recording API and touches go through an accessibility service. It needs no
+> Shizuku, so no Wi-Fi/wireless debugging on the road; the trade-offs are that the phone screen
+> stays on and there's one app at a time. *Per-app screens* (Advanced, experimental): each app
+> on its own virtual display through Shizuku + scrcpy, as described below. It crashed natively
+> on a Galaxy M53 / Android 16 with scrcpy-server 4.1.
+>
+> **Hotspot gotcha:** libwebrtc on Android never offered the hotspot address as an ICE
+> candidate, so the phone relays a UDP port on all interfaces to libwebrtc's loopback
+> candidate and advertises it at the hotspot's .1 address (`HotspotRelay.kt`).
+
 Phone apps on the Tesla screen: YouTube for the passenger, Conductore or navigation for the
 driver, one app full screen or two side by side. Built to be fast and to keep playing while
 the car moves.

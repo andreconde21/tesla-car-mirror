@@ -88,8 +88,8 @@ object ScrcpyControl {
  * stream forwarded to a WebRTC data channel, and the car's input sent back.
  */
 class MirrorSession(
-    val sid: Long,
-    val pkg: String,
+    override val sid: Long,
+    override val pkg: String,
     private val width: Int,
     private val height: Int,
     private val dpi: Int,
@@ -98,7 +98,7 @@ class MirrorSession(
     private val onStarted: (MirrorSession) -> Unit,
     private val onEnded: (MirrorSession, String?) -> Unit,
     private val onStats: (MirrorSession, Long, Int) -> Unit = { _, _, _ -> },
-) {
+) : CarSession {
     private val tag = "CarMirrorSession"
     private var scid = Random.nextInt(1, 0x7fffffff)
     private val attemptLogs = StringBuilder()
@@ -119,14 +119,14 @@ class MirrorSession(
     private var packets = 0L
     private var lastStats = 0L
     /** The scrcpy server output when the session failed, for remote debugging. */
-    @Volatile var fullLog: String? = null
+    @Volatile override var fullLog: String? = null
 
-    fun attachChannel(dc: DataChannel) {
+    override fun attachChannel(dc: DataChannel) {
         channel = dc
         channelLatch.countDown()
     }
 
-    fun start() {
+    override fun start() {
         thread(name = "session-$sid") {
             val error = try {
                 run()
@@ -321,7 +321,7 @@ class MirrorSession(
         dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), true))
     }
 
-    fun requestKeyFrame() {
+    override fun requestKeyFrame() {
         val now = System.currentTimeMillis()
         if (now - lastKeyRequest < 1000) return
         lastKeyRequest = now
@@ -340,15 +340,23 @@ class MirrorSession(
         }
     }
 
-    fun touch(action: Int, id: Long, x: Int, y: Int, w: Int, h: Int) = sendControl(ScrcpyControl.touch(action, id, x, y, w, h))
-    fun scroll(x: Int, y: Int, w: Int, h: Int, dx: Float, dy: Float) = sendControl(ScrcpyControl.scroll(x, y, w, h, dx, dy))
+    override fun touch(action: Int, id: Long, x: Int, y: Int, w: Int, h: Int) = sendControl(ScrcpyControl.touch(action, id, x, y, w, h))
+    override fun scroll(x: Int, y: Int, w: Int, h: Int, dx: Float, dy: Float) = sendControl(ScrcpyControl.scroll(x, y, w, h, dx, dy))
+    override fun key(name: String) = key(
+        when (name) {
+            "home" -> ScrcpyControl.KEYCODE_HOME
+            "recents" -> ScrcpyControl.KEYCODE_APP_SWITCH
+            else -> ScrcpyControl.KEYCODE_BACK
+        },
+    )
+
     fun key(keycode: Int) {
         sendControl(ScrcpyControl.key(0, keycode))
         sendControl(ScrcpyControl.key(1, keycode))
     }
     /** scrcpy's controller crashes on a resize before its display exists: hold it until then. */
     @Synchronized
-    fun resize(w: Int, h: Int) {
+    override fun resize(w: Int, h: Int) {
         if (!flexDisplay) return // fixed-size display (fallback profile): the car letterboxes instead
         if (appStarted) sendControl(ScrcpyControl.resizeDisplay(w and 7.inv(), h and 7.inv()))
         else pendingResize = w to h
@@ -363,7 +371,7 @@ class MirrorSession(
         return lines.takeLast(3).joinToString(" | ").take(500).ifEmpty { null }
     }
 
-    fun stop() {
+    override fun stop() {
         if (stopped) return
         stopped = true
         runCatching { ShizukuBridge.service?.stopSession(scid) }
