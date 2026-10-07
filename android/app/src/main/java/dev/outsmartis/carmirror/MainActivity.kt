@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
         val touchOnFlow by AppState.touch.collectAsState()
         var touchOn by remember { mutableStateOf(TouchService.isEnabled(this)) }
         var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(this)) }
+        var audioOn by remember { mutableStateOf(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
         var addresses by remember { mutableStateOf(localAddresses()) }
         val allApps = remember { Apps.launchable(this) }
         var favorites by remember { mutableStateOf(Apps.favorites(this, prefs).map { it.pkg }.toSet()) }
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 addresses = localAddresses()
                 touchOn = touchOnFlow || TouchService.isEnabled(this@MainActivity)
                 overlayOn = Settings.canDrawOverlays(this@MainActivity)
+                audioOn = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                 ShizukuBridge.refresh()
                 delay(3000)
             }
@@ -155,6 +157,16 @@ class MainActivity : ComponentActivity() {
                                     if (!running) MirrorService.start(this@MainActivity)
                                     Projection.requestConsent(this@MainActivity)
                                 }) { Text("Start sharing") }
+                            }
+                        }
+                        Step(
+                            done = shizukuState == ShizukuState.READY || audioOn,
+                            title = "Sound in the car",
+                            body = if (shizukuState == ShizukuState.READY) "Through Shizuku: the phone goes quiet and the car plays the sound."
+                            else "Without Shizuku, sound rides on screen sharing and needs the audio permission (Android calls it microphone; CarMirror only captures what apps play).",
+                        ) {
+                            if (shizukuState != ShizukuState.READY && !audioOn) {
+                                OutlinedButton(onClick = { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 2) }) { Text("Allow") }
                             }
                         }
                         Step(

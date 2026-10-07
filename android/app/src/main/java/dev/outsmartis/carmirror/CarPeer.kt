@@ -35,6 +35,7 @@ class CarPeer(
     private var ctl: DataChannel? = null
     private val videoChannels = ConcurrentHashMap<Long, DataChannel>()
     private val sessions = ConcurrentHashMap<Long, CarSession>()
+    private val audio = AudioStreamer(context) { m -> sendCtl(JSONObject().put("t", "log").put("msg", m)) }
     private val pendingCandidates = mutableListOf<IceCandidate>()
     private var remoteSet = false
     @Volatile private var closed = false
@@ -140,6 +141,8 @@ class CarPeer(
                         post { onCtl(text) }
                     }
                 })
+            } else if (label == "audio") {
+                audio.channel = dc
             } else if (label.startsWith("v:")) {
                 val sid = label.substring(2).toLongOrNull() ?: return
                 videoChannels[sid] = dc
@@ -270,6 +273,7 @@ class CarPeer(
             "key" -> sessions[sid]?.key(msg.optString("k", "back"))
             "reset" -> sessions[sid]?.requestKeyFrame()
             "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
+            "audio" -> if (msg.optBoolean("on")) audio.start() else audio.stop()
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
             "reconfigure" -> sessions[sid]?.reconfigure(
                 msg.optInt("w", 1280).coerceIn(320, 2560),
@@ -338,7 +342,9 @@ class CarPeer(
         }
         val onStarted = { sess: CarSession -> sendCtl(JSONObject().put("t", "started").put("sid", sess.sid)) }
         val session: CarSession = if (mode == "apps") {
-            AppSession(context, p.sid, p.pkg, p.w, p.h, p.dpi, p.fps, p.bitrate, onStarted, onEnded, onStats)
+            AppSession(context, p.sid, p.pkg, p.w, p.h, p.dpi, p.fps, p.bitrate, onStarted, onEnded, onStats).also {
+                it.onLog = { m -> sendCtl(JSONObject().put("t", "log").put("msg", m)) }
+            }
         } else {
             // one phone screen: a new app replaces whatever was showing
             sessions.values.forEach { it.stop() }
@@ -393,6 +399,7 @@ class CarPeer(
         if (notify) runCatching { sendSignal(JSONObject().put("type", "bye").put("reason", reason)) }
         sessions.values.forEach { it.stop() }
         sessions.clear()
+        audio.stop()
         relay?.close()
         AppState.sessions.value = 0
         AppState.car.value = null

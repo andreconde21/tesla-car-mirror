@@ -45,6 +45,8 @@ class AppSession(
         private set
     @Volatile private var displayId = -1
     override var fullLog: String? = null
+    /** Diagnostics to forward to the car's remote log. */
+    @Volatile var onLog: ((String) -> Unit)? = null
 
     override fun attachChannel(dc: DataChannel) {
         sender.channel = dc
@@ -53,6 +55,12 @@ class AppSession(
 
     override fun start() {
         thread(name = "app-$sid") {
+            // keep the phone awake (screen dimmed): when it locks, Android pauses the apps here too
+            val wake = (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).run {
+                @Suppress("DEPRECATION")
+                newWakeLock(android.os.PowerManager.SCREEN_DIM_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP, "CarMirror:apps")
+            }
+            runCatching { wake.acquire(6 * 60 * 60 * 1000L) }
             val error = try {
                 run()
                 null
@@ -61,6 +69,7 @@ class AppSession(
                 e.message ?: e.toString()
             }
             releaseDisplay()
+            runCatching { wake.release() }
             onEnded(this, if (stopped) null else error ?: "The app stopped")
         }
     }
@@ -207,10 +216,16 @@ class AppSession(
             "recents" -> KeyEvent.KEYCODE_APP_SWITCH
             else -> KeyEvent.KEYCODE_BACK
         }
-        val now = SystemClock.uptimeMillis()
-        for (a in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
-            val ev = KeyEvent(now, now, a, code, 0, 0, -1, 0, 0, InputDevice.SOURCE_KEYBOARD)
-            runCatching { service.injectKey(ev, displayId) }
+        val id = displayId
+        thread(name = "key-$sid") {
+            // keys go to the focused display; touches move focus, keys don't
+            runCatching { service.focusDisplay(id) }
+            val now = SystemClock.uptimeMillis()
+            val results = intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP).map { a ->
+                val ev = KeyEvent(now, now, a, code, 0, 0, -1, 0, 0, InputDevice.SOURCE_KEYBOARD)
+                runCatching { service.injectKey(ev, id) }.getOrDefault(false)
+            }
+            onLog?.invoke("key $name on display $id: ${results.joinToString("/")}")
         }
     }
 

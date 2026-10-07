@@ -7,8 +7,14 @@ import android.content.ContextWrapper
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.hardware.input.InputManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
+import java.io.FileOutputStream
+import kotlin.concurrent.thread
 import android.util.Log
 import android.view.InputEvent
 import android.view.KeyEvent
@@ -86,16 +92,85 @@ class PrivilegedService : IPrivileged.Stub() {
 
     override fun injectMotion(event: MotionEvent, displayId: Int): Boolean = inject(event, displayId)
 
-    override fun injectKey(event: KeyEvent, displayId: Int): Boolean = inject(event, displayId)
+    override fun injectKey(event: KeyEvent, displayId: Int): Boolean = inject(event, displayId, INJECT_WAIT_FOR_RESULT)
 
-    private fun inject(event: InputEvent, displayId: Int): Boolean = try {
+    private fun inject(event: InputEvent, displayId: Int, mode: Int = INJECT_ASYNC): Boolean = try {
         InputEvent::class.java.getMethod("setDisplayId", Int::class.javaPrimitiveType).invoke(event, displayId)
         val im = shellContext().getSystemService(Context.INPUT_SERVICE) as InputManager
         InputManager::class.java.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
-            .invoke(im, event, INJECT_ASYNC) as Boolean
+            .invoke(im, event, mode) as Boolean
     } catch (e: Exception) {
         Log.w(tag, "inject failed: $e")
         false
+    }
+
+    /**
+     * Phones without per-display focus route keys to the "top focused" display (the phone's own
+     * screen). Touches move focus, keys don't: pull focus to the car display before a key.
+     */
+    override fun focusDisplay(displayId: Int) {
+        runCatching {
+            val wm = serviceInterface("window", "android.view.IWindowManager")
+            wm.javaClass.getMethod("moveDisplayToTopIfAllowed", Int::class.javaPrimitiveType).invoke(wm, displayId)
+        }.onFailure { Log.w(tag, "moveDisplayToTopIfAllowed: $it") }
+        runCatching {
+            val atm = serviceInterface("activity_task", "android.app.IActivityTaskManager")
+            atm.javaClass.getMethod("focusTopTask", Int::class.javaPrimitiveType).invoke(atm, displayId)
+        }.onFailure { Log.w(tag, "focusTopTask: $it") }
+    }
+
+    private fun serviceInterface(name: String, iface: String): Any {
+        val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, name) as IBinder
+        return Class.forName("$iface\$Stub").getMethod("asInterface", IBinder::class.java).invoke(null, binder)!!
+    }
+
+    @Volatile private var recorder: AudioRecord? = null
+
+    @SuppressLint("MissingPermission", "WrongConstant")
+    override fun startAudioCapture(): ParcelFileDescriptor {
+        stopAudioCapture()
+        val format = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(48000)
+            .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+            .build()
+        val min = AudioRecord.getMinBufferSize(48000, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT)
+        val builder = AudioRecord.Builder()
+        if (Build.VERSION.SDK_INT >= 31) builder.setContext(shellContext())
+        val rec = builder
+            .setAudioSource(MediaRecorder.AudioSource.REMOTE_SUBMIX)
+            .setAudioFormat(format)
+            .setBufferSizeInBytes(maxOf(min, 4096) * 4)
+            .build()
+        rec.startRecording()
+        recorder = rec
+        val pipe = ParcelFileDescriptor.createPipe()
+        val out = FileOutputStream(pipe[1].fileDescriptor)
+        val writeEnd = pipe[1]
+        thread(name = "audio-capture") {
+            val buf = ByteArray(3840) // 20 ms of 48 kHz stereo 16-bit
+            try {
+                while (recorder === rec) {
+                    val n = rec.read(buf, 0, buf.size)
+                    if (n < 0) break
+                    if (n > 0) out.write(buf, 0, n)
+                }
+            } catch (e: Exception) {
+                Log.i(tag, "audio capture ended: $e")
+            } finally {
+                runCatching { out.close() }
+                runCatching { writeEnd.close() }
+            }
+        }
+        Log.i(tag, "audio capture started")
+        return pipe[0]
+    }
+
+    override fun stopAudioCapture() {
+        val rec = recorder ?: return
+        recorder = null
+        runCatching { rec.stop() }
+        runCatching { rec.release() }
     }
 
     /** Keyboard on the car display, not on the phone. */
@@ -125,6 +200,7 @@ class PrivilegedService : IPrivileged.Stub() {
         private const val FLAG_OWN_FOCUS = 1 shl 14
         private const val FLAG_DEVICE_DISPLAY_GROUP = 1 shl 15
         private const val INJECT_ASYNC = 0
+        private const val INJECT_WAIT_FOR_RESULT = 1
 
         @Volatile private var context: Context? = null
 

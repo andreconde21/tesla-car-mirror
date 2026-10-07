@@ -3,6 +3,7 @@
 import { log, warn } from './remotelog.js';
 import { Signaling, PhoneLink } from './rtc.js';
 import { Player, detectDecoder } from './player.js';
+import { AudioPlayer } from './audio.js';
 
 const VERSION = '1.0.0';
 const MAX_LONG_SIDE = 1920; // encoder-friendly cap; Tesla screens are 1920 px wide anyway
@@ -28,7 +29,11 @@ function save(key, value) {
   }
 }
 
-const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true }, load('cm.settings', {}));
+const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true }, load('cm.settings', {}));
+const zoom = load('cm.zoom', {}); // per-app zoom factor (car-sized screens)
+const audio = new AudioPlayer();
+audio.setEnabled(settings.sound);
+audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
 
 const state = {
   sig: null,
@@ -200,6 +205,7 @@ function connectPhone() {
     onOpen: onLinkOpen,
     onClose: onLinkClose,
     onCtl,
+    onAudio: (buf) => audio.feed(buf),
   });
 }
 
@@ -213,6 +219,7 @@ function onLinkOpen() {
     screen: { w: screen.width, h: screen.height, dpr: devicePixelRatio, vw: innerWidth, vh: innerHeight },
   });
   state.link.sendCtl({ t: 'apps?' });
+  state.link.sendCtl({ t: 'audio', on: settings.sound && AudioPlayer.supported() });
   buildPanes();
   show('panes');
   refreshPath();
@@ -279,6 +286,7 @@ function onCtl(msg) {
       log('phone mode ' + msg.mode);
       if (msg.mode === 'screen' && state.layout === 'split') setLayout('full');
       $('#btn-layout').hidden = msg.mode === 'screen' || $('#screen-panes').hidden;
+      for (const p of state.panes) p.setChrome();
       break;
     case 'bars': {
       const pane = state.panes.find((p) => p.sid === msg.sid);
@@ -311,6 +319,9 @@ function onCtl(msg) {
       if (pane) pane.onPhoneStats(msg);
       break;
     }
+    case 'log':
+      log('phone: ' + msg.msg);
+      break;
     case 'pong':
       state.rtt = Math.round(performance.now() - msg.ts);
       break;
@@ -363,6 +374,8 @@ class Pane {
 
     $('.back', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'key', sid: this.sid, k: 'back' });
     $('.keyframe', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'reset', sid: this.sid });
+    $('.zoom-out', this.el).onclick = () => this.zoomBy(1 / 1.15);
+    $('.zoom-in', this.el).onclick = () => this.zoomBy(1.15);
     $('.apps', this.el).onclick = () => {
       if (state.mode === 'screen' && this.sid) {
         if (this.overlay) this.hideOverlay();
@@ -386,6 +399,8 @@ class Pane {
     const running = !!this.sid;
     $('.back', this.el).hidden = !running;
     $('.keyframe', this.el).hidden = !running;
+    $('.zoom-out', this.el).hidden = !running || state.mode !== 'apps';
+    $('.zoom-in', this.el).hidden = !running || state.mode !== 'apps';
     $('.apps', this.el).hidden = !running;
     $('.close', this.el).hidden = !running && state.layout !== 'split';
     this.title.textContent = running ? this.app.label : state.layout === 'split' ? 'Choose an app' : 'Apps on ' + state.phoneName;
@@ -461,7 +476,8 @@ class Pane {
     w = Math.floor(w / 8) * 8;
     h = Math.floor(h / 8) * 8;
     const pxPerCss = w / cssW;
-    const dpi = Math.round(160 * settings.scale * pxPerCss);
+    const z = (this.app && zoom[this.app.pkg]) || 1;
+    const dpi = Math.round(160 * settings.scale * pxPerCss * z);
     return { w, h, dpi };
   }
 
@@ -561,6 +577,16 @@ class Pane {
       dpi = Math.round((dpi * 2) / 3);
     }
     return { w, h, dpi, fps: this.degraded ? 30 : settings.fps, bitrate: settings.bitrate * 1_000_000 };
+  }
+
+  /** Bigger/smaller interface for this app (car-sized screens: changes the app's dpi live). */
+  zoomBy(f) {
+    if (!this.app) return;
+    const z = Math.min(2.5, Math.max(0.4, ((zoom[this.app.pkg] || 1) * f)));
+    zoom[this.app.pkg] = Math.round(z * 100) / 100;
+    save('cm.zoom', zoom);
+    toast(`${this.app.label}: ${Math.round(z * 100)}%`, 1500);
+    this.reconfigure();
   }
 
   /** Apply new stream settings to the running app without reopening it. */
@@ -699,6 +725,7 @@ function setupChrome() {
     $('#set-scale').value = String(settings.scale);
     $('#set-stats').checked = !!settings.stats;
     $('#set-focus').checked = !!settings.focus;
+    $('#set-sound').checked = !!settings.sound;
     $('#row-scale').hidden = state.mode === 'screen';
     $('#btn-forget').hidden = !state.paired;
     $('#about').textContent = `CarMirror ${VERSION} · ${navigator.userAgent}`;
@@ -711,6 +738,13 @@ function setupChrome() {
     settings.scale = Number($('#set-scale').value);
     settings.stats = $('#set-stats').checked;
     settings.focus = $('#set-focus').checked;
+    const soundChanged = settings.sound !== $('#set-sound').checked;
+    settings.sound = $('#set-sound').checked;
+    if (soundChanged) {
+      audio.setEnabled(settings.sound);
+audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
+      state.link?.sendCtl({ t: 'audio', on: settings.sound });
+    }
     save('cm.settings', settings);
     const streamChanged = before !== JSON.stringify([settings.bitrate, settings.fps, settings.scale]);
     for (const p of state.panes) {

@@ -110,6 +110,11 @@ export class PhoneLink {
       this.hooks.onCtl(msg);
     };
 
+    // the phone's sound: late packets are useless, so no ordering and no retransmits
+    this.audio = pc.createDataChannel('audio', { ordered: false, maxRetransmits: 0 });
+    this.audio.binaryType = 'arraybuffer';
+    this.audio.onmessage = (e) => this.hooks.onAudio?.(e.data);
+
     this.connectTimer = setTimeout(() => this.close('timeout'), CONNECT_TIMEOUT_MS);
     this.start().catch((e) => {
       error('offer failed: ' + e);
