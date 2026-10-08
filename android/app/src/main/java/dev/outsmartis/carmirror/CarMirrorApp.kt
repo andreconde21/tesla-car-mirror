@@ -7,6 +7,8 @@ class CarMirrorApp : Application() {
     override fun onCreate() {
         super.onCreate()
         PhoneLog.init(this)
+        // Os.setsockoptIfreq (pinning the relay to the hotspot interface) is a hidden API
+        runCatching { org.lsposed.hiddenapibypass.HiddenApiBypass.addHiddenApiExemptions("Landroid/system/Os;") }
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(this)
                 // libwebrtc only gathers candidates on interfaces Android's ConnectivityManager

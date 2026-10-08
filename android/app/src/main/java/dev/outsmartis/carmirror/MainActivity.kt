@@ -57,8 +57,11 @@ class MainActivity : ComponentActivity() {
         prefs = Prefs(this)
         // adb shell am start -n dev.outsmartis.carmirror/.MainActivity --es server http://host:8080
         intent?.getStringExtra("server")?.let { prefs.serverUrl = it }
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        if (Build.VERSION.SDK_INT >= 33) {
+            // notifications for the service; nearby Wi-Fi devices = reaching the car on the hotspot
+            val wanted = listOf(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.NEARBY_WIFI_DEVICES)
+                .filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
         }
         if (prefs.startOnLaunch && !AppState.serviceRunning.value) MirrorService.start(this)
         setContent {

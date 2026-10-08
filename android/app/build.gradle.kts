@@ -13,7 +13,7 @@ android {
     defaultConfig {
         applicationId = "dev.outsmartis.carmirror"
         minSdk = 30
-        targetSdk = 36
+        targetSdk = 35
         versionCode = (project.findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (project.findProperty("versionName") as String?) ?: "1.0.0"
         buildConfigField("String", "DEFAULT_SERVER", "\"https://carmirror.outsmartis.dev\"")

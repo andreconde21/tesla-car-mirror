@@ -48,6 +48,8 @@ class CarPeer(
     private var relayMLine = 0
     private val carIps = mutableSetOf<String>()
     private val advertised = mutableSetOf<String>()
+    private var pinnedIface: String? = null
+    private var loggedIfaces = false
 
 
     // ------------------------------------------------------------ signaling
@@ -219,6 +221,17 @@ class CarPeer(
         val r = relay ?: return
         val targets = linkedSetOf<String>()
         for (ip in carIps) {
+            if (pinnedIface == null) {
+                val hs = HotspotRelay.findHotspot(ip)
+                if (hs != null && r.pinTo(hs.first)) {
+                    pinnedIface = hs.first
+                    targets += hs.second
+                    PhoneLog.log("relay pinned to hotspot ${hs.first} (${hs.second})")
+                } else if (!loggedIfaces) {
+                    loggedIfaces = true
+                    PhoneLog.log("no hotspot interface found to pin the relay to; app sees: ${HotspotRelay.describeInterfaces()}")
+                }
+            }
             val real = HotspotRelay.addressToward(ip)
             if (real != null && real !in advertised) PhoneLog.log("route to the car at $ip goes out from $real")
             if (real != null && HotspotRelay.guessFor(real) != null) targets += real

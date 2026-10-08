@@ -27,6 +27,9 @@ class HotspotRelay(private val loopbackPort: Int) {
         receiveBufferSize = 1 shl 20
         sendBufferSize = 1 shl 20
     }
+
+    /** Pin the relay to the hotspot interface (if found): app routing may send car-bound traffic out over mobile data. */
+    fun pinTo(iface: String): Boolean = bindToDevice(outer, iface)
     private val inner = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).apply {
         receiveBufferSize = 1 shl 20
         sendBufferSize = 1 shl 20
@@ -101,6 +104,55 @@ class HotspotRelay(private val loopbackPort: Int) {
                 .flatMap { ni -> ni.inetAddresses.toList().filterIsInstance<Inet4Address>().map { it.hostAddress!! } }
         } catch (_: Exception) {
             emptyList()
+        }
+
+        private val TETHER_IFACES = listOf("swlan0", "ap0", "wlan1", "softap0", "swlan1", "wlan2", "ap1")
+
+        /**
+         * SO_BINDTODEVICE: sends and receives only on [iface]. Plain Linux, allowed for unprivileged
+         * sockets on recent kernels; returns false where it isn't.
+         */
+        fun bindToDevice(socket: DatagramSocket, iface: String): Boolean = try {
+            val pfd = android.os.ParcelFileDescriptor.fromDatagramSocket(socket)
+            try {
+                val m = android.system.Os::class.java.getMethod(
+                    "setsockoptIfreq", java.io.FileDescriptor::class.java, Int::class.javaPrimitiveType,
+                    Int::class.javaPrimitiveType, String::class.java,
+                )
+                m.invoke(null, pfd.fileDescriptor, 1 /* SOL_SOCKET */, 25 /* SO_BINDTODEVICE */, iface)
+                true
+            } finally {
+                pfd.close()
+            }
+        } catch (_: Throwable) {
+            false
+        }
+
+        /**
+         * The interface (and our address on it) through which [carIp] is reachable, found by trying
+         * the usual hotspot interface names: Android hides the hotspot from apps' interface lists.
+         */
+        fun findHotspot(carIp: String): Pair<String, String>? {
+            for (name in TETHER_IFACES) {
+                val ok = runCatching {
+                    DatagramSocket().use { s ->
+                        if (!bindToDevice(s, name)) return@use null
+                        s.connect(InetAddress.getByName(carIp), 9)
+                        (s.localAddress as? Inet4Address)?.hostAddress?.takeIf { it != "0.0.0.0" }
+                    }
+                }.getOrNull()
+                if (ok != null) return name to ok
+            }
+            return null
+        }
+
+        /** Interface names the app can see, for diagnostics. */
+        fun describeInterfaces(): String = try {
+            NetworkInterface.getNetworkInterfaces().toList().joinToString(", ") { ni ->
+                ni.name + ni.inetAddresses.toList().filterIsInstance<Inet4Address>().joinToString("") { "=" + it.hostAddress }
+            }
+        } catch (e: Exception) {
+            "?: $e"
         }
 
         /**
