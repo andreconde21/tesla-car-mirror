@@ -96,7 +96,7 @@
     <ul>
       <li>An Android phone (Android 11 or newer) with mobile data and a hotspot.</li>
       <li>A Tesla with the in-car browser. Tested on a 2023 Model Y; newer Teslas with the AMD computer work best.</li>
-      <li>Optional: <a href="https://github.com/RikkaApps/Shizuku/releases">Shizuku</a> for car-sized app screens and split view.</li>
+      <li>Recommended: <a href="https://github.com/RikkaApps/Shizuku/releases">Shizuku</a>. With it CarMirror switches your hotspot to <b>car mode</b>, so the Tesla can reach the phone directly, and gives each app its own car-sized screen with split view. Without it, the stream goes through the server (uses mobile data).</li>
     </ul>
 
     <h2>Setup on the phone (once, about 5 minutes)</h2>
@@ -153,8 +153,8 @@
     <h2>Good to know</h2>
     <ul>
       <li>Apps that block screenshots (banking, Netflix and similar) show black. That's the app's choice and can't be worked around.</li>
-      <li>The car must be on the phone's hotspot. Over the car's own LTE, the phone can't be reached directly.</li>
-      <li>Video uses no mobile data: it stays between the phone and the car.</li>
+      <li>The Tesla browser refuses private network addresses, which every normal phone hotspot uses. That's why CarMirror switches the hotspot to <b>car mode</b> (a 9.9.0.x network, needs Shizuku). In car mode only the car can join the hotspot; you can turn this off in the app's Advanced section.</li>
+      <li>In car mode, video uses no mobile data: it stays between the phone and the car. Through the server, it counts twice (phone upload and car download).</li>
       <li>Watching video while driving is the passenger's job. Follow your local laws.</li>
       <li>This is a hobby project, built in a few days and offered as is.</li>
     </ul>
