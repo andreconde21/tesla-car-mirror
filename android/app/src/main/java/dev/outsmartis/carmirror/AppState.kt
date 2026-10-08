@@ -51,6 +51,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("appsMode2", true)
         set(v) = sp.edit().putBoolean("appsMode2", v).apply()
 
+    /** Switch the hotspot to car mode (9.9.0.x) automatically whenever it's on and Shizuku runs. */
+    var autoCarHotspot: Boolean
+        get() = sp.getBoolean("autoCarHotspot", true)
+        set(v) = sp.edit().putBoolean("autoCarHotspot", v).apply()
+
     var startOnLaunch: Boolean
         get() = sp.getBoolean("startOnLaunch", true)
         set(v) = sp.edit().putBoolean("startOnLaunch", v).apply()

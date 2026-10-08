@@ -45,4 +45,7 @@ interface IPrivileged {
     String startCarHotspot(String serverAddr, String clientAddr) = 19;
 
     void stopCarHotspot() = 20;
+
+    // IPv4 address of the Wi-Fi hotspot interface, "" when the hotspot is off.
+    String hotspotAddress() = 21;
 }

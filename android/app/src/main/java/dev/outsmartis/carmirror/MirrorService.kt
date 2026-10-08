@@ -38,10 +38,11 @@ class MirrorService : Service() {
         .build()
     private var ws: WebSocket? = null
     private var backoffMs = 1000L
-    private var stopped = false
+    @Volatile private var stopped = false
     private var peer: CarPeer? = null
     private var turn: JSONObject? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var hotspotWatcher: Thread? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,6 +69,13 @@ class MirrorService : Service() {
         AppState.serviceRunning.value = true
         ShizukuBridge.bindIfPossible()
         connect()
+        // the hotspot watcher: car mode as soon as the hotspot comes on (Shizuku only)
+        hotspotWatcher = kotlin.concurrent.thread(name = "hotspot-watch", isDaemon = true) {
+            while (!stopped) {
+                runCatching { CarHotspot.watch(prefs.autoCarHotspot) }
+                Thread.sleep(5000)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

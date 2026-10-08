@@ -254,9 +254,10 @@ function onLinkClose(reason) {
     }
     message(
       'Can\'t reach the phone directly',
-      'Check that the car is on the <b>phone\'s hotspot</b>. If it is, the direct path is blocked on this network: ' +
-        'connecting through the server always works, but uses mobile data both ways (about 1.8 GB/h at 4 Mbps). ' +
-        'You can turn it off again in Settings. Retrying automatically…',
+      'The Tesla browser can\'t reach a normal phone hotspot. Best fix: run <b>Shizuku</b> on the phone, then CarMirror ' +
+        'switches the hotspot to <b>car mode</b> by itself and the car reconnects in a few seconds. ' +
+        'Or connect through the server: always works, but uses mobile data both ways (about 1.8 GB/h at 4 Mbps). ' +
+        'Retrying automatically…',
       { actions },
     );
   } else if (hadPanes) {

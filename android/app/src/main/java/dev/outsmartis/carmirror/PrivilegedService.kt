@@ -166,6 +166,22 @@ class PrivilegedService : IPrivileged.Stub() {
         "error: $cause"
     }
 
+    override fun hotspotAddress(): String = try {
+        val tm = tetheringManager()
+        @Suppress("UNCHECKED_CAST")
+        val ifaces = Class.forName("android.net.TetheringManager").getMethod("getTetheredIfaces").invoke(tm) as Array<String>
+        ifaces.asSequence()
+            .filter { !it.startsWith("rndis") && !it.startsWith("usb") && !it.startsWith("bt") }
+            .mapNotNull { name ->
+                java.net.NetworkInterface.getByName(name)?.inetAddresses?.toList()
+                    ?.firstOrNull { it is java.net.Inet4Address }?.hostAddress
+            }
+            .firstOrNull() ?: ""
+    } catch (e: Throwable) {
+        Log.w(tag, "hotspotAddress: $e")
+        ""
+    }
+
     /** Back to the normal hotspot: stop, then start again without the static addresses. */
     override fun stopCarHotspot() {
         runCatching {
