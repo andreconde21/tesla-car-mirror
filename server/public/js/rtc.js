@@ -69,10 +69,13 @@ export class PhoneLink {
     this.closed = false;
     this.videoChannels = new Map();
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      bundlePolicy: 'max-bundle',
-    });
+    // relay: the stream goes through our TURN server when phone and car can't reach each other
+    // directly (the Tesla browser can't talk to private addresses; whether the carrier loops
+    // traffic back varies). Opt-in: it costs mobile data both ways.
+    this.relay = !!hooks.turn;
+    const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+    if (hooks.turn) iceServers.push(hooks.turn);
+    const pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' });
     this.pc = pc;
 
     pc.onicecandidate = (e) => {
@@ -125,7 +128,7 @@ export class PhoneLink {
   async start() {
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
-    this.sig.send({ t: 'signal', data: { type: 'offer', sdp: offer.sdp } });
+    this.sig.send({ t: 'signal', data: { type: 'offer', sdp: offer.sdp, relay: this.relay } });
   }
 
   async onSignal(data) {
@@ -194,6 +197,7 @@ export class PhoneLink {
       const direct = types.every((t) => t === 'host' || t === 'prflx');
       return {
         direct,
+        relayed: types.includes('relay'),
         rttMs: pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null,
         local: local?.candidateType,
         remote: remote?.candidateType,

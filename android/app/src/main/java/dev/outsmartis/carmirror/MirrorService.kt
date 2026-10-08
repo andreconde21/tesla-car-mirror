@@ -40,6 +40,7 @@ class MirrorService : Service() {
     private var backoffMs = 1000L
     private var stopped = false
     private var peer: CarPeer? = null
+    private var turn: JSONObject? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -166,6 +167,7 @@ class MirrorService : Service() {
     private fun onServerMessage(msg: JSONObject) {
         when (msg.optString("t")) {
             "welcome" -> {
+                turn = msg.optJSONObject("turn")
                 AppState.pairCode.value = msg.optString("pairCode")
                 AppState.pairedCars.value = msg.optInt("pairedCars")
             }
@@ -194,6 +196,7 @@ class MirrorService : Service() {
                         updateNotification("Waiting for the car")
                     }
                 },
+                turn = if (data.optBoolean("relay")) turn else null,
             )
             updateNotification("Car connected")
         }

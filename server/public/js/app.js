@@ -29,7 +29,7 @@ function save(key, value) {
   }
 }
 
-const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true }, load('cm.settings', {}));
+const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false }, load('cm.settings', {}));
 const zoom = load('cm.zoom', {}); // per-app zoom factor (car-sized screens)
 const audio = new AudioPlayer();
 audio.setEnabled(settings.sound);
@@ -158,6 +158,7 @@ function onSig(msg) {
       break;
     case 'paired':
       state.paired = true;
+      state.turn = msg.turn || null;
       state.phoneName = msg.name || 'Phone';
       state.phoneOnline = !!msg.online;
       onPhonePresence();
@@ -206,6 +207,7 @@ function connectPhone() {
     onClose: onLinkClose,
     onCtl,
     onAudio: (buf) => audio.feed(buf),
+    turn: settings.relay && state.turn ? state.turn : null,
   });
 }
 
@@ -223,6 +225,10 @@ function onLinkOpen() {
   buildPanes();
   show('panes');
   refreshPath();
+  setTimeout(async () => {
+    const info = await state.link?.pathInfo();
+    if (info) log('link path', info);
+  }, 1500);
 }
 
 function onLinkClose(reason) {
@@ -233,10 +239,25 @@ function onLinkClose(reason) {
   warn('link down: ' + reason);
   if (reason === 'timeout' || reason === 'connection failed') {
     setStatus('No direct connection', 'bad');
+    const actions = [];
+    if (!settings.relay && state.turn) {
+      actions.push({
+        label: 'Connect through the server',
+        primary: true,
+        onClick: () => {
+          settings.relay = true;
+          save('cm.settings', settings);
+          clearTimeout(state.reconnectTimer);
+          connectPhone();
+        },
+      });
+    }
     message(
       'Can\'t reach the phone directly',
-      'The car must be on the <b>phone\'s hotspot</b> (car Wi-Fi settings), not on its own LTE or another Wi-Fi. ' +
-        'Retrying automatically…',
+      'Check that the car is on the <b>phone\'s hotspot</b>. If it is, the direct path is blocked on this network: ' +
+        'connecting through the server always works, but uses mobile data both ways (about 1.8 GB/h at 4 Mbps). ' +
+        'You can turn it off again in Settings. Retrying automatically…',
+      { actions },
     );
   } else if (hadPanes) {
     setStatus('Reconnecting…', 'warn');
@@ -344,7 +365,7 @@ async function refreshPath() {
     state.path = info;
     const rtt = info.rttMs ?? state.rtt;
     setStatus(
-      `${state.phoneName} · ${info.direct ? 'direct' : 'via internet'}${rtt != null ? ` · ${rtt} ms` : ''}`,
+      `${state.phoneName} · ${info.direct ? 'direct' : info.relayed ? 'via server' : 'via internet'}${rtt != null ? ` · ${rtt} ms` : ''}`,
       info.direct ? 'ok' : 'warn',
     );
   }
@@ -726,6 +747,7 @@ function setupChrome() {
     $('#set-stats').checked = !!settings.stats;
     $('#set-focus').checked = !!settings.focus;
     $('#set-sound').checked = !!settings.sound;
+    $('#set-relay').checked = !!settings.relay;
     $('#row-scale').hidden = state.mode === 'screen';
     $('#btn-forget').hidden = !state.paired;
     $('#about').textContent = `CarMirror ${VERSION} · ${navigator.userAgent}`;
@@ -738,6 +760,11 @@ function setupChrome() {
     settings.scale = Number($('#set-scale').value);
     settings.stats = $('#set-stats').checked;
     settings.focus = $('#set-focus').checked;
+    const relayChanged = settings.relay !== $('#set-relay').checked;
+    settings.relay = $('#set-relay').checked;
+    if (relayChanged && state.link) {
+      state.link.close('relay setting changed');
+    }
     const soundChanged = settings.sound !== $('#set-sound').checked;
     settings.sound = $('#set-sound').checked;
     if (soundChanged) {

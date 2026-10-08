@@ -25,6 +25,22 @@ const LOG_MAX_BYTES = 5 * 1024 * 1024;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// TURN relay (coturn, REST-API auth): short-lived credentials signed with the shared secret.
+// Only used when the car opts in, for when the direct link can't be made.
+const TURN_HOST = process.env.TURN_HOST || 'carmirror.outsmartis.dev';
+let TURN_SECRET = null;
+try {
+  TURN_SECRET = fs.readFileSync(process.env.TURN_SECRET_FILE || '/turn/secret', 'utf8').trim() || null;
+} catch {
+  // no relay configured
+}
+function turnCreds(id) {
+  if (!TURN_SECRET) return null;
+  const username = `${Math.floor(Date.now() / 1000) + 12 * 3600}:${id}`;
+  const credential = crypto.createHmac('sha1', TURN_SECRET).update(username).digest('base64');
+  return { urls: [`turn:${TURN_HOST}:3478?transport=udp`, `turn:${TURN_HOST}:3478?transport=tcp`], username, credential };
+}
+
 // ---------------------------------------------------------------- state
 
 /** devices: deviceId -> { secretHash, name, created }; cars: tokenHash -> { deviceId, created, lastSeen } */
@@ -246,7 +262,7 @@ function bindCar(ws, deviceId, tokenHash) {
   ws.tokenHash = tokenHash;
   carsOf(deviceId).add(ws);
   const dev = state.devices[deviceId];
-  send(ws, { t: 'paired', name: dev?.name || 'Phone', online: phones.has(deviceId) });
+  send(ws, { t: 'paired', name: dev?.name || 'Phone', online: phones.has(deviceId), turn: turnCreds('car-' + deviceId.slice(0, 8)) });
 }
 
 function handlePhone(ws, msg) {
@@ -276,7 +292,7 @@ function handlePhone(ws, msg) {
       ws.deviceId = deviceId;
       phones.set(deviceId, ws);
       const pairedCars = Object.values(state.cars).filter((c) => c.deviceId === deviceId).length;
-      send(ws, { t: 'welcome', pairCode: currentPairCode(deviceId), pairedCars });
+      send(ws, { t: 'welcome', pairCode: currentPairCode(deviceId), pairedCars, turn: turnCreds('phone-' + deviceId.slice(0, 8)) });
       notifyCars(deviceId, { t: 'phone', online: true });
       log('phone online', deviceId.slice(0, 8), state.devices[deviceId].name);
       break;

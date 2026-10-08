@@ -28,6 +28,8 @@ class CarPeer(
     private val prefs: Prefs,
     private val sendSignal: (JSONObject) -> Unit,
     private val onClosed: (CarPeer) -> Unit,
+    /** TURN server (only when the car opted into relaying through the server). */
+    private val turn: JSONObject? = null,
 ) {
     private val tag = "CarMirrorPeer"
     private val exec = Executors.newSingleThreadExecutor()
@@ -189,9 +191,18 @@ class CarPeer(
 
     // created after `observer` is initialized
     init {
-        val config = PeerConnection.RTCConfiguration(
-            listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()),
-        ).apply {
+        val servers = mutableListOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        if (turn != null) {
+            val urls = turn.optJSONArray("urls")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+            if (urls.isNotEmpty()) {
+                servers += PeerConnection.IceServer.builder(urls)
+                    .setUsername(turn.optString("username"))
+                    .setPassword(turn.optString("credential"))
+                    .createIceServer()
+                PhoneLog.log("peer $connId: relay through the server enabled")
+            }
+        }
+        val config = PeerConnection.RTCConfiguration(servers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             candidateNetworkPolicy = PeerConnection.CandidateNetworkPolicy.ALL
