@@ -249,6 +249,8 @@ class CarPeer(
             HotspotRelay.guessFor(ip)?.let { targets += it }
         }
         HotspotRelay.visibleAddresses().filterTo(targets) { HotspotRelay.guessFor(it) != null }
+        // car hotspot (9.9.0.x): the one address the Tesla browser can reach first
+        if (CarHotspot.active) targets.add(CarHotspot.SERVER)
         for (ip in targets) {
             if (!advertised.add(ip)) continue
             val cand = "candidate:${(ip.hashCode() and 0x7fffffff)} 1 udp 2130706431 $ip ${r.port} typ host generation 0"

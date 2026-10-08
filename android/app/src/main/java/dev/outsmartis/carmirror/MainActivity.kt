@@ -229,6 +229,21 @@ class MainActivity : ComponentActivity() {
                         if (cands.isNotEmpty()) {
                             Text("Last link candidates: " + cands.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                         }
+                        if (shizukuState == ShizukuState.READY) {
+                            val hs by AppState.carHotspot.collectAsState()
+                            Text("Car hotspot (Shizuku)", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                hs ?: ("The Tesla browser can't reach normal hotspot addresses. This restarts your hotspot on " +
+                                    "9.9.0.x so the car connects to the phone directly (no mobile data for the video). " +
+                                    "While it's on, only the car can join the hotspot."),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            if (hs?.startsWith("On") != true && hs != "Starting…") {
+                                OutlinedButton(onClick = { CarHotspot.start() }) { Text("Start car hotspot") }
+                            } else {
+                                OutlinedButton(onClick = { CarHotspot.stop() }) { Text("Back to normal hotspot") }
+                            }
+                        }
                         if (lastError != null) {
                             Text("Last problem: $lastError", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }

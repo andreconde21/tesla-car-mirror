@@ -39,4 +39,10 @@ interface IPrivileged {
     ParcelFileDescriptor startAudioCapture() = 17;
 
     void stopAudioCapture() = 18;
+
+    // Restarts the Wi-Fi hotspot (same name/password) with a fixed IPv4 subnet, e.g. 9.9.0.1/24
+    // for the phone and 9.9.0.2 for the one client. Returns "ok" or an error.
+    String startCarHotspot(String serverAddr, String clientAddr) = 19;
+
+    void stopCarHotspot() = 20;
 }

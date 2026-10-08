@@ -21,6 +21,8 @@ object AppState {
     val localCandidates = MutableStateFlow<List<String>>(emptyList())
     val projection = MutableStateFlow(false)
     val touch = MutableStateFlow(false)
+    /** null = off; otherwise a status line ("On (phone is 9.9.0.1)", "Couldn't start: …") */
+    val carHotspot = MutableStateFlow<String?>(null)
 }
 
 class Prefs(context: Context) {

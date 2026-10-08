@@ -124,6 +124,76 @@ class PrivilegedService : IPrivileged.Stub() {
         return Class.forName("$iface\$Stub").getMethod("asInterface", IBinder::class.java).invoke(null, binder)!!
     }
 
+    /**
+     * Wi-Fi hotspot with a public-looking subnet: the Tesla browser refuses private (RFC 1918)
+     * addresses, so on a 9.9.0.x hotspot it can reach the phone directly. Android's tethering
+     * module supports a static server/client address pair for privileged callers
+     * (TetheringRequest.Builder.setStaticIpv4Addresses, TETHER_PRIVILEGED, which shell holds);
+     * its DHCP server then hands out that single client address, so one device (the car) can join.
+     */
+    override fun startCarHotspot(serverAddr: String, clientAddr: String): String = try {
+        val tmCls = Class.forName("android.net.TetheringManager")
+        val tm = tetheringManager()
+        runCatching { tmCls.getMethod("stopTethering", Int::class.javaPrimitiveType).invoke(tm, TETHERING_WIFI) }
+        Thread.sleep(2000)
+        val laCls = Class.forName("android.net.LinkAddress")
+        val la = laCls.getConstructor(String::class.java)
+        val bCls = Class.forName("android.net.TetheringManager\$TetheringRequest\$Builder")
+        val b = bCls.getConstructor(Int::class.javaPrimitiveType).newInstance(TETHERING_WIFI)
+        bCls.getMethod("setStaticIpv4Addresses", laCls, laCls).invoke(b, la.newInstance(serverAddr), la.newInstance(clientAddr))
+        runCatching { bCls.getMethod("setExemptFromEntitlementCheck", Boolean::class.javaPrimitiveType).invoke(b, true) }
+        runCatching { bCls.getMethod("setShouldShowEntitlementUi", Boolean::class.javaPrimitiveType).invoke(b, false) }
+        val request = bCls.getMethod("build").invoke(b)
+        val cbCls = Class.forName("android.net.TetheringManager\$StartTetheringCallback")
+        val done = java.util.concurrent.CountDownLatch(1)
+        var result = "timeout"
+        val cb = java.lang.reflect.Proxy.newProxyInstance(cbCls.classLoader, arrayOf(cbCls)) { _, m, args ->
+            when (m.name) {
+                "onTetheringStarted" -> { result = "ok"; done.countDown() }
+                "onTetheringFailed" -> { result = "failed (error ${args?.getOrNull(0)})"; done.countDown() }
+            }
+            null
+        }
+        val reqCls = Class.forName("android.net.TetheringManager\$TetheringRequest")
+        tmCls.getMethod("startTethering", reqCls, java.util.concurrent.Executor::class.java, cbCls)
+            .invoke(tm, request, java.util.concurrent.Executor { it.run() }, cb)
+        done.await(20, TimeUnit.SECONDS)
+        Log.i(tag, "car hotspot $serverAddr: $result")
+        result
+    } catch (e: Throwable) {
+        val cause = (e as? java.lang.reflect.InvocationTargetException)?.targetException ?: e
+        Log.w(tag, "car hotspot failed", cause)
+        "error: $cause"
+    }
+
+    /** Back to the normal hotspot: stop, then start again without the static addresses. */
+    override fun stopCarHotspot() {
+        runCatching {
+            val tmCls = Class.forName("android.net.TetheringManager")
+            val tm = tetheringManager()
+            tmCls.getMethod("stopTethering", Int::class.javaPrimitiveType).invoke(tm, TETHERING_WIFI)
+            Thread.sleep(2000)
+            val cbCls = Class.forName("android.net.TetheringManager\$StartTetheringCallback")
+            val cb = java.lang.reflect.Proxy.newProxyInstance(cbCls.classLoader, arrayOf(cbCls)) { _, _, _ -> null }
+            tmCls.getMethod("startTethering", Int::class.javaPrimitiveType, java.util.concurrent.Executor::class.java, cbCls)
+                .invoke(tm, TETHERING_WIFI, java.util.concurrent.Executor { it.run() }, cb)
+        }.onFailure { Log.w(tag, "normal hotspot: $it") }
+    }
+
+    /**
+     * A TetheringManager whose calls identify as com.android.shell (our uid): the one from
+     * getSystemService() carries the system context's package ("android") and is rejected.
+     */
+    private fun tetheringManager(): Any {
+        val tmCls = Class.forName("android.net.TetheringManager")
+        val ctor = tmCls.getDeclaredConstructor(Context::class.java, java.util.function.Supplier::class.java)
+        ctor.isAccessible = true
+        val supplier = java.util.function.Supplier<IBinder> {
+            Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, "tethering") as IBinder
+        }
+        return ctor.newInstance(shellContext(), supplier)
+    }
+
     @Volatile private var recorder: AudioRecord? = null
 
     @SuppressLint("MissingPermission", "WrongConstant")
@@ -201,6 +271,7 @@ class PrivilegedService : IPrivileged.Stub() {
         private const val FLAG_DEVICE_DISPLAY_GROUP = 1 shl 15
         private const val INJECT_ASYNC = 0
         private const val INJECT_WAIT_FOR_RESULT = 1
+        private const val TETHERING_WIFI = 0
 
         @Volatile private var context: Context? = null
 
