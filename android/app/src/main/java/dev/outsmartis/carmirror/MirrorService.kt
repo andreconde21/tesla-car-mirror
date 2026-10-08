@@ -132,6 +132,10 @@ class MirrorService : Service() {
                     .put("name", "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}")
                     .toString(),
             )
+            PhoneLog.sink = { line ->
+                webSocket.send(JSONObject().put("t", "phoneLog").put("v", BuildConfig.VERSION_NAME).put("msg", line).toString())
+            }
+            PhoneLog.flush()
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -150,6 +154,7 @@ class MirrorService : Service() {
             main.post {
                 if (webSocket !== ws) return@post
                 Log.w(tag, "server connection down: $why")
+                PhoneLog.sink = null
                 AppState.serverOnline.value = false
                 AppState.server.value = "Offline ($why), retrying…"
                 AppState.pairCode.value = null

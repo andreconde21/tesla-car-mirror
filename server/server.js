@@ -281,6 +281,12 @@ function handlePhone(ws, msg) {
       log('phone online', deviceId.slice(0, 8), state.devices[deviceId].name);
       break;
     }
+    case 'phoneLog':
+      // the phone's own view (link state, relay, crashes), for debugging what the car can't see
+      if (ws.deviceId) {
+        appendLog(JSON.stringify({ at: new Date().toISOString(), role: 'phone', d: ws.deviceId.slice(0, 8), v: String(msg.v || '').slice(0, 20), msg: String(msg.msg || '').slice(0, 8000) }));
+      }
+      break;
     case 'newCode':
       if (ws.deviceId) send(ws, { t: 'pairCode', code: newPairCode(ws.deviceId) });
       break;

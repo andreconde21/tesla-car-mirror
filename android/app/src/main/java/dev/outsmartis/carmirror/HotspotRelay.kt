@@ -34,6 +34,8 @@ class HotspotRelay(private val loopbackPort: Int) {
     private val webrtc = InetSocketAddress(InetAddress.getByName("127.0.0.1"), loopbackPort)
     @Volatile private var car: InetSocketAddress? = null
     @Volatile private var closed = false
+    private var sentOk = false
+    private var sendFailed = false
 
     val port: Int get() = outer.localPort
 
@@ -48,6 +50,7 @@ class HotspotRelay(private val loopbackPort: Int) {
                     val from = InetSocketAddress(p.address, p.port)
                     if (car != from) {
                         Log.i(tag, "car at $from")
+                        PhoneLog.log("relay: first packet from the car at $from")
                         car = from
                     }
                     inner.send(DatagramPacket(buf, p.length, webrtc))
@@ -64,7 +67,18 @@ class HotspotRelay(private val loopbackPort: Int) {
                     p.setData(buf)
                     inner.receive(p)
                     val dest = car ?: continue
-                    outer.send(DatagramPacket(buf, p.length, dest))
+                    try {
+                        outer.send(DatagramPacket(buf, p.length, dest))
+                        if (!sentOk) {
+                            sentOk = true
+                            PhoneLog.log("relay: replying to the car at $dest")
+                        }
+                    } catch (e: Exception) {
+                        if (!sendFailed) {
+                            sendFailed = true
+                            PhoneLog.log("relay: can't reach the car at $dest: $e")
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 if (!closed) Log.w(tag, "relay-out stopped: $e")

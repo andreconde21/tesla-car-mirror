@@ -6,6 +6,7 @@ import org.webrtc.PeerConnectionFactory
 class CarMirrorApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        PhoneLog.init(this)
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(this)
                 // libwebrtc only gathers candidates on interfaces Android's ConnectivityManager

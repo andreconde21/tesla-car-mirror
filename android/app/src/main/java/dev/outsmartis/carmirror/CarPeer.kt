@@ -162,6 +162,7 @@ class CarPeer(
 
         override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
             Log.i(tag, "connection $newState")
+            PhoneLog.log("peer $connId: connection $newState")
             when (newState) {
                 PeerConnection.PeerConnectionState.CONNECTED -> updateCarState()
                 PeerConnection.PeerConnectionState.FAILED, PeerConnection.PeerConnectionState.CLOSED ->
@@ -173,6 +174,7 @@ class CarPeer(
         override fun onSignalingChange(state: PeerConnection.SignalingState) {}
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
             Log.i(tag, "ice $state")
+            PhoneLog.log("peer $connId: ice $state")
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) {}
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
@@ -204,6 +206,7 @@ class CarPeer(
             HotspotRelay(loopbackPort)
         } catch (e: Exception) {
             Log.w(tag, "relay failed: $e")
+            PhoneLog.log("relay failed: $e")
             return
         }
         relayMid = mid ?: "0"
@@ -221,6 +224,7 @@ class CarPeer(
             if (!advertised.add(ip)) continue
             val cand = "candidate:${(ip.hashCode() and 0x7fffffff)} 1 udp 2130706431 $ip ${r.port} typ host generation 0"
             Log.i(tag, "relay candidate $cand")
+            PhoneLog.log("relay offered at $ip:${r.port}")
             sendSignal(
                 JSONObject().put("type", "candidate").put(
                     "candidate",
@@ -396,6 +400,7 @@ class CarPeer(
         if (closed) return
         closed = true
         Log.i(tag, "closing peer $connId: $reason")
+        PhoneLog.log("peer $connId closed: $reason")
         if (notify) runCatching { sendSignal(JSONObject().put("type", "bye").put("reason", reason)) }
         sessions.values.forEach { it.stop() }
         sessions.clear()
