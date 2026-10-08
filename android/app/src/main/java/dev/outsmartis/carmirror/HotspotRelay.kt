@@ -104,6 +104,20 @@ class HotspotRelay(private val loopbackPort: Int) {
         }
 
         /**
+         * The phone's own address on the way to [carIp]: "connecting" a UDP socket makes the kernel
+         * pick the route and source address, without sending anything. That is the hotspot
+         * address, even though Android hides the hotspot interface from apps.
+         */
+        fun addressToward(carIp: String): String? = try {
+            DatagramSocket().use { s ->
+                s.connect(InetAddress.getByName(carIp), 9)
+                (s.localAddress as? Inet4Address)?.hostAddress?.takeIf { it != "0.0.0.0" }
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+        /**
          * The phone's likely address on the car's subnet. Hotspots put themselves at .1 of
          * the /24 they hand out on every Android build seen so far; a wrong guess costs
          * nothing (one ICE candidate that never answers).

@@ -218,7 +218,12 @@ class CarPeer(
     private fun advertiseRelay() {
         val r = relay ?: return
         val targets = linkedSetOf<String>()
-        carIps.mapNotNullTo(targets) { HotspotRelay.guessFor(it) }
+        for (ip in carIps) {
+            val real = HotspotRelay.addressToward(ip)
+            if (real != null && real !in advertised) PhoneLog.log("route to the car at $ip goes out from $real")
+            if (real != null && HotspotRelay.guessFor(real) != null) targets += real
+            HotspotRelay.guessFor(ip)?.let { targets += it }
+        }
         HotspotRelay.visibleAddresses().filterTo(targets) { HotspotRelay.guessFor(it) != null }
         for (ip in targets) {
             if (!advertised.add(ip)) continue
