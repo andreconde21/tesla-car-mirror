@@ -103,6 +103,29 @@ class MainActivity : ComponentActivity() {
         var showPairing by remember { mutableStateOf(false) }
         var showApps by remember { mutableStateOf(false) }
         var showAdvanced by remember { mutableStateOf(false) }
+        var carBt by remember { mutableStateOf(prefs.carBluetooth) }
+        var pickingCar by remember { mutableStateOf(false) }
+        if (pickingCar) {
+            val devices = remember { CarBluetooth.bonded(this@MainActivity) }
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { pickingCar = false },
+                title = { Text("Which is the car?") },
+                text = {
+                    Column {
+                        if (devices.isEmpty()) Text("No paired Bluetooth devices found.")
+                        devices.forEach { (addr, name) ->
+                            TextButton(onClick = {
+                                prefs.carBluetooth = addr
+                                prefs.carBluetoothName = name
+                                carBt = addr
+                                pickingCar = false
+                            }) { Text(name) }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { pickingCar = false }) { Text("Cancel") } },
+            )
+        }
 
         LaunchedEffect(Unit) {
             while (true) {
@@ -236,6 +259,29 @@ class MainActivity : ComponentActivity() {
                                                 if (!running) MirrorService.start(this@MainActivity)
                                                 Projection.requestConsent(this@MainActivity)
                                             }) { Text("Start sharing") }
+                                        }
+                                    }
+                                }
+                                Step(
+                                    done = carBt != null,
+                                    title = "Start with the car (optional)",
+                                    body = if (carBt != null) "Starts when the phone connects to ${prefs.carBluetoothName ?: "the car"} over Bluetooth, stops when it disconnects."
+                                    else "Pick the car's Bluetooth: CarMirror then starts and stops by itself.",
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(onClick = {
+                                            if (!CarBluetooth.hasPermission(this@MainActivity)) {
+                                                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 3)
+                                            } else {
+                                                pickingCar = true
+                                            }
+                                        }) { Text(if (carBt != null) "Change" else "Choose the car") }
+                                        if (carBt != null) {
+                                            OutlinedButton(onClick = {
+                                                prefs.carBluetooth = null
+                                                prefs.carBluetoothName = null
+                                                carBt = null
+                                            }) { Text("Off") }
                                         }
                                     }
                                 }

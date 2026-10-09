@@ -56,6 +56,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("autoCarHotspot", true)
         set(v) = sp.edit().putBoolean("autoCarHotspot", v).apply()
 
+    /** Bluetooth address of the car: CarMirror starts when the phone connects to it, stops when it disconnects. */
+    var carBluetooth: String?
+        get() = sp.getString("carBluetooth", null)
+        set(v) = sp.edit().putString("carBluetooth", v).apply()
+
+    var carBluetoothName: String?
+        get() = sp.getString("carBluetoothName", null)
+        set(v) = sp.edit().putString("carBluetoothName", v).apply()
+
     var startOnLaunch: Boolean
         get() = sp.getBoolean("startOnLaunch", true)
         set(v) = sp.edit().putBoolean("startOnLaunch", v).apply()

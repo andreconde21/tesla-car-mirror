@@ -16,6 +16,7 @@ import org.webrtc.SessionDescription
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 
 /**
  * The WebRTC link with one car browser. The car offers and creates every data channel:
@@ -286,6 +287,7 @@ class CarPeer(
                 carInfo = if (ua.contains("Tesla", ignoreCase = true)) "Tesla" else "car browser"
                 Log.i(tag, "car hello: $msg")
                 sendCtl(JSONObject().put("t", "caps").put("mode", mode()))
+                startMediaWatch()
                 TouchService.foregroundListener = { pkg, home ->
                     post { sendCtl(JSONObject().put("t", "fg").put("pkg", pkg).put("home", home)) }
                 }
@@ -309,6 +311,7 @@ class CarPeer(
             "reset" -> sessions[sid]?.requestKeyFrame()
             "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
             "audio" -> if (msg.optBoolean("on")) audio.start() else audio.stop()
+            "mediaKey" -> mediaKey(msg.optString("k"))
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
             "reconfigure" -> sessions[sid]?.reconfigure(
                 msg.optInt("w", 1280).coerceIn(320, 2560),
@@ -408,6 +411,59 @@ class CarPeer(
         AppState.sessions.value = sessions.size
         session.start()
         updateCarState()
+    }
+
+    // ------------------------------------------------------------ now playing
+
+    private var lastMedia = ""
+    private val sentIcons = mutableSetOf<String>()
+    @Volatile private var mediaWatcher: Thread? = null
+
+    /** Tells the car what's playing (Shizuku: real title; otherwise the app in front), for the Tesla media card. */
+    private fun startMediaWatch() {
+        if (mediaWatcher != null) return
+        mediaWatcher = thread(name = "now-playing", isDaemon = true) {
+            while (!closed) {
+                runCatching { reportMedia() }
+                Thread.sleep(2000)
+            }
+        }
+    }
+
+    private fun reportMedia() {
+        val raw = ShizukuBridge.service?.let { runCatching { it.nowPlaying() }.getOrNull() }.orEmpty()
+        val info = if (raw.isNotEmpty()) JSONObject(raw) else {
+            // nothing reports a media session: name the app the car shows (per-app screens), or the app in front
+            val pkg = sessions.values.lastOrNull()?.pkg ?: TouchService.instance?.foreground?.takeIf { TouchService.instance?.isHome(it) != true } ?: return
+            JSONObject().put("pkg", pkg).put("title", "").put("artist", "").put("playing", true)
+        }
+        val pkg = info.optString("pkg")
+        val label = runCatching {
+            context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString()
+        }.getOrDefault(pkg)
+        info.put("label", label)
+        val key = info.toString()
+        if (key == lastMedia) return
+        lastMedia = key
+        if (pkg !in sentIcons) {
+            sentIcons += pkg
+            Apps.iconPngBase64(context, pkg)?.let { sendCtl(JSONObject().put("t", "icon").put("pkg", pkg).put("icon", it)) }
+        }
+        sendCtl(JSONObject(key).put("t", "media"))
+    }
+
+    /** The Tesla's media controls -> the phone's active media session. */
+    private fun mediaKey(k: String) {
+        val code = when (k) {
+            "play" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY
+            "pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+            "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+            "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            else -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        }
+        val am = context.getSystemService(android.media.AudioManager::class.java)
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code))
+        am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, code))
     }
 
     @Volatile private var appsFailed = false

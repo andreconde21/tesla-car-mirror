@@ -48,4 +48,7 @@ interface IPrivileged {
 
     // IPv4 address of the Wi-Fi hotspot interface, "" when the hotspot is off.
     String hotspotAddress() = 21;
+
+    // What's playing on the phone (top media session), as JSON {pkg,title,artist,playing}; "" if nothing.
+    String nowPlaying() = 22;
 }

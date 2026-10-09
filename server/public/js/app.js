@@ -279,6 +279,8 @@ function onCtl(msg) {
       restorePanes();
       break;
     case 'icon': {
+      state.icons = state.icons || {};
+      state.icons[msg.pkg] = msg.icon;
       const app = state.apps.find((a) => a.pkg === msg.pkg);
       if (app) {
         app.icon = msg.icon;
@@ -336,6 +338,9 @@ function onCtl(msg) {
       }
       break;
     }
+    case 'media':
+      updateMediaSession(msg);
+      break;
     case 'stats': {
       const pane = state.panes.find((p) => p.sid === msg.sid);
       if (pane) pane.onPhoneStats(msg);
@@ -352,6 +357,38 @@ function onCtl(msg) {
       break;
     default:
       break;
+  }
+}
+
+// ------------------------------------------------------------------ Tesla media card
+
+/** What's playing on the phone -> the media card the Tesla shows for the browser (app icon + title). */
+function updateMediaSession(m) {
+  if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+  const app = state.apps.find((a) => a.pkg === m.pkg);
+  const label = (app && app.label) || m.label || 'CarMirror';
+  const icon = (app && app.icon) || state.icons?.[m.pkg];
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: m.title || label,
+      artist: m.title ? m.artist || label : '',
+      album: m.title ? label : '',
+      artwork: icon ? [{ src: 'data:image/png;base64,' + icon, sizes: '96x96', type: 'image/png' }] : [],
+    });
+    navigator.mediaSession.playbackState = m.playing ? 'playing' : 'paused';
+  } catch (e) {
+    warn('media session: ' + e);
+  }
+}
+
+if ('mediaSession' in navigator) {
+  const key = (k) => () => state.link?.sendCtl({ t: 'mediaKey', k });
+  for (const [action, k] of [['play', 'play'], ['pause', 'pause'], ['nexttrack', 'next'], ['previoustrack', 'prev']]) {
+    try {
+      navigator.mediaSession.setActionHandler(action, key(k));
+    } catch {
+      // action not supported by this browser
+    }
   }
 }
 
@@ -726,11 +763,6 @@ function restorePanes() {
 
 function setupChrome() {
   $('#btn-layout').onclick = () => setLayout(state.layout === 'split' ? 'full' : 'split');
-  $('#btn-fullscreen').onclick = () => {
-    const d = document;
-    if (d.fullscreenElement) d.exitFullscreen?.();
-    else d.documentElement.requestFullscreen?.().catch((e) => toast('Fullscreen not available: ' + e.message));
-  };
   $('#btn-immersive').onclick = () => {
     document.body.classList.add('immersive');
     $('#btn-show-bars').hidden = false;

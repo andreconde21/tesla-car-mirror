@@ -182,6 +182,45 @@ class PrivilegedService : IPrivileged.Stub() {
         ""
     }
 
+    /** The active media session (shell holds MEDIA_CONTENT_CONTROL): playing one first. */
+    /**
+     * Active media sessions straight from the media_session service: MediaSessionManager itself
+     * needs app-process framework setup that app_process doesn't have.
+     */
+    private fun mediaControllers(): List<android.media.session.MediaController> {
+        val ims = serviceInterface("media_session", "android.media.session.ISessionManager")
+        val m = ims.javaClass.methods.first { it.name == "getSessions" }
+        @Suppress("UNCHECKED_CAST")
+        val raw = m.invoke(ims, null, 0)
+        val tokens: List<Any> = when (raw) {
+            is List<*> -> raw.filterNotNull()
+            else -> (raw.javaClass.getMethod("getList").invoke(raw) as List<*>).filterNotNull() // ParceledListSlice
+        }
+        return tokens.mapNotNull { t ->
+            runCatching { android.media.session.MediaController(shellContext(), t as android.media.session.MediaSession.Token) }.getOrNull()
+        }
+    }
+
+    override fun nowPlaying(): String = try {
+        val controllers = mediaControllers()
+        val c = controllers.firstOrNull { it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
+            ?: controllers.firstOrNull()
+        if (c == null) {
+            ""
+        } else {
+            val md = c.metadata
+            org.json.JSONObject()
+                .put("pkg", c.packageName)
+                .put("title", md?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: "")
+                .put("artist", md?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: md?.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: "")
+                .put("playing", c.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING)
+                .toString()
+        }
+    } catch (e: Throwable) {
+        Log.w(tag, "nowPlaying: $e")
+        ""
+    }
+
     /** Back to the normal hotspot: stop, then start again without the static addresses. */
     override fun stopCarHotspot() {
         runCatching {
