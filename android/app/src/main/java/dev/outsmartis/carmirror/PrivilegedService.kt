@@ -62,7 +62,7 @@ class PrivilegedService : IPrivileged.Stub() {
             ?: throw IllegalStateException("createVirtualDisplay returned null")
         val id = vd.display.displayId
         displays[id] = vd
-        setImeLocal(id)
+        setImePolicy(id, IME_POLICY_LOCAL)
         Log.i(tag, "display $id ${width}x$height/$dpi")
         return id
     }
@@ -298,14 +298,18 @@ class PrivilegedService : IPrivileged.Stub() {
         runCatching { rec.release() }
     }
 
-    /** Keyboard on the car display, not on the phone. */
-    private fun setImeLocal(displayId: Int) {
+    override fun setKeyboard(displayId: Int, show: Boolean) {
+        setImePolicy(displayId, if (show) IME_POLICY_LOCAL else IME_POLICY_HIDE)
+    }
+
+    /** LOCAL: keyboard on the car display, not on the phone. HIDE: no on-screen keyboard at all. */
+    private fun setImePolicy(displayId: Int, policy: Int) {
         runCatching {
             val sm = Class.forName("android.os.ServiceManager")
             val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
             val wm = Class.forName("android.view.IWindowManager\$Stub").getMethod("asInterface", IBinder::class.java).invoke(null, binder)
             wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                .invoke(wm, displayId, 0 /* DISPLAY_IME_POLICY_LOCAL */)
+                .invoke(wm, displayId, policy)
         }.onFailure { Log.w(tag, "IME policy: $it") }
     }
 
@@ -327,6 +331,8 @@ class PrivilegedService : IPrivileged.Stub() {
         private const val INJECT_ASYNC = 0
         private const val INJECT_WAIT_FOR_RESULT = 1
         private const val TETHERING_WIFI = 0
+        private const val IME_POLICY_LOCAL = 0 // WindowManager.DISPLAY_IME_POLICY_LOCAL
+        private const val IME_POLICY_HIDE = 2 // WindowManager.DISPLAY_IME_POLICY_HIDE
 
         @Volatile private var context: Context? = null
 

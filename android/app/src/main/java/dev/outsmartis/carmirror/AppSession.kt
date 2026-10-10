@@ -44,6 +44,7 @@ class AppSession(
     @Volatile var startedOk = false
         private set
     @Volatile private var displayId = -1
+    @Volatile private var keyboard = true
     override var fullLog: String? = null
     /** Diagnostics to forward to the car's remote log. */
     @Volatile var onLog: ((String) -> Unit)? = null
@@ -111,6 +112,7 @@ class AppSession(
             if (stopped) return
             if (displayId < 0) {
                 displayId = service.createDisplay("CarMirror-$pkg", w, h, dpi, surface)
+                if (!keyboard) runCatching { service.setKeyboard(displayId, false) }
             } else {
                 service.resizeDisplay(displayId, w, h, dpi, surface)
             }
@@ -227,6 +229,12 @@ class AppSession(
             }
             onLog?.invoke("key $name on display $id: ${results.joinToString("/")}")
         }
+    }
+
+    override fun setKeyboard(show: Boolean) {
+        keyboard = show
+        val id = displayId
+        if (id >= 0) runCatching { ShizukuBridge.service?.setKeyboard(id, show) }
     }
 
     /** The car pane changed size (bars hidden, fullscreen, split): new display size, app relayouts. */

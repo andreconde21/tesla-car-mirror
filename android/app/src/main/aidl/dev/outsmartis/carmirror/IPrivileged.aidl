@@ -51,4 +51,7 @@ interface IPrivileged {
 
     // What's playing on the phone (top media session), as JSON {pkg,title,artist,playing}; "" if nothing.
     String nowPlaying() = 22;
+
+    // Whether the on-screen keyboard shows on that display (off: typing on a physical keyboard).
+    void setKeyboard(int displayId, boolean show) = 23;
 }

@@ -311,6 +311,10 @@ class CarPeer(
             "reset" -> sessions[sid]?.requestKeyFrame()
             "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
             "audio" -> if (msg.optBoolean("on")) audio.start() else audio.stop()
+            "keyboard" -> {
+                keyboard = msg.optBoolean("on", true)
+                sessions.values.forEach { it.setKeyboard(keyboard) }
+            }
             "mediaKey" -> mediaKey(msg.optString("k"))
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
             "reconfigure" -> sessions[sid]?.reconfigure(
@@ -334,6 +338,9 @@ class CarPeer(
             sendCtl(JSONObject().put("t", "icon").put("pkg", a.pkg).put("icon", icon))
         }
     }
+
+    /** The car's "on-screen keyboard" setting (off when typing on a physical keyboard). */
+    @Volatile private var keyboard = true
 
     private data class StartParams(val sid: Long, val pkg: String, val w: Int, val h: Int, val dpi: Int, val fps: Int, val bitrate: Int)
 
@@ -407,6 +414,7 @@ class CarPeer(
             )
         }
         sessions.put(p.sid, session)?.stop()
+        if (!keyboard) session.setKeyboard(false)
         videoChannels[p.sid]?.let { session.attachChannel(it) }
         AppState.sessions.value = sessions.size
         session.start()

@@ -17,6 +17,8 @@ interface CarSession {
     fun requestKeyFrame()
     /** New stream settings without reopening the app (quality change, lighter stream). */
     fun reconfigure(w: Int, h: Int, dpi: Int, fps: Int, bitrate: Int)
+    /** Show the on-screen keyboard (off when the driver types on a physical keyboard). */
+    fun setKeyboard(show: Boolean)
     /** Diagnostic output to ship to the car when the session failed. */
     val fullLog: String?
 }

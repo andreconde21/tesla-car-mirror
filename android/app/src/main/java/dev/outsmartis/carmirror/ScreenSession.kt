@@ -1,5 +1,6 @@
 package dev.outsmartis.carmirror
 
+import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
 import android.graphics.Point
@@ -9,6 +10,8 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import android.view.Display
@@ -268,8 +271,16 @@ class ScreenSession(
         restart = true
     }
 
+    /** The phone's own keyboard: the accessibility service can hide it while the car is showing. */
+    override fun setKeyboard(show: Boolean) {
+        val svc = TouchService.instance ?: return
+        val mode = if (show) AccessibilityService.SHOW_MODE_AUTO else AccessibilityService.SHOW_MODE_HIDDEN
+        Handler(Looper.getMainLooper()).post { svc.softKeyboardController.setShowMode(mode) }
+    }
+
     override fun stop() {
         stopped = true
+        setKeyboard(true)
         channelLatch.countDown()
     }
 }

@@ -83,7 +83,7 @@ Video channel `v:<sid>` (phone to car), big-endian:
 start (flags: 1 config, 2 key frame) · `[3]payload…` continuation (64 KB chunks).
 
 Control channel `ctl` (JSON): car→phone `hello`, `apps?`, `start{sid,pkg,w,h,dpi,fps,bitrate}`,
-`stop`, `touch{a,id,x,y,w,h}`, `scroll`, `key{k}`, `reset`, `resize{w,h}`, `ping`;
+`stop`, `touch{a,id,x,y,w,h}`, `scroll`, `key{k}`, `reset`, `resize{w,h}`, `keyboard{on}`, `ping`;
 phone→car `apps`, `icon`, `started`, `ended{reason}`, `stats{lag}`, `pong`.
 
 ## Deploy the server

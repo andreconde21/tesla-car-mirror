@@ -29,7 +29,7 @@ function save(key, value) {
   }
 }
 
-const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false }, load('cm.settings', {}));
+const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false, keyboard: true }, load('cm.settings', {}));
 const zoom = load('cm.zoom', {}); // per-app zoom factor (car-sized screens)
 const audio = new AudioPlayer();
 audio.setEnabled(settings.sound);
@@ -222,6 +222,7 @@ function onLinkOpen() {
   });
   state.link.sendCtl({ t: 'apps?' });
   state.link.sendCtl({ t: 'audio', on: settings.sound && AudioPlayer.supported() });
+  state.link.sendCtl({ t: 'keyboard', on: settings.keyboard });
   buildPanes();
   show('panes');
   refreshPath();
@@ -781,6 +782,7 @@ function setupChrome() {
     $('#set-focus').checked = !!settings.focus;
     $('#set-sound').checked = !!settings.sound;
     $('#set-relay').checked = !!settings.relay;
+    $('#set-keyboard').checked = !!settings.keyboard;
     $('#row-scale').hidden = state.mode === 'screen';
     $('#btn-forget').hidden = !state.paired;
     $('#about').textContent = `CarMirror ${VERSION} · ${navigator.userAgent}`;
@@ -804,6 +806,10 @@ function setupChrome() {
       audio.setEnabled(settings.sound);
 audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
       state.link?.sendCtl({ t: 'audio', on: settings.sound });
+    }
+    if (settings.keyboard !== $('#set-keyboard').checked) {
+      settings.keyboard = $('#set-keyboard').checked;
+      state.link?.sendCtl({ t: 'keyboard', on: settings.keyboard });
     }
     save('cm.settings', settings);
     const streamChanged = before !== JSON.stringify([settings.bitrate, settings.fps, settings.scale]);
