@@ -231,6 +231,27 @@ class AppSession(
         }
     }
 
+    /** Typing in order: one thread, so fast keys never overtake each other. */
+    private val typing = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    override fun typeKey(key: String, ctrl: Boolean, shift: Boolean) = inject(Typing.keyEvents(key, ctrl, shift))
+
+    override fun typeText(text: String): Boolean {
+        inject(Typing.textEvents(text))
+        return true
+    }
+
+    private fun inject(events: List<KeyEvent>) {
+        val service = ShizukuBridge.service ?: return
+        val id = displayId
+        if (id < 0 || events.isEmpty()) return
+        typing.execute {
+            // keys go to the focused display; a touch in the other pane may have moved it
+            runCatching { service.focusDisplay(id) }
+            for (ev in events) runCatching { service.injectKey(ev, id) }
+        }
+    }
+
     override fun setKeyboard(show: Boolean) {
         keyboard = show
         val id = displayId
@@ -274,6 +295,7 @@ class AppSession(
 
     override fun stop() {
         stopped = true
+        typing.shutdown()
         releaseDisplay()
         channelLatch.countDown()
     }

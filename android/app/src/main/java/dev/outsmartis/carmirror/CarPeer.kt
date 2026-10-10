@@ -1,7 +1,11 @@
 package dev.outsmartis.carmirror
 
 import android.content.Context
+import android.hardware.input.InputManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.InputDevice
 import org.json.JSONArray
 import org.json.JSONObject
 import org.webrtc.DataChannel
@@ -295,6 +299,7 @@ class CarPeer(
                     sendCtl(JSONObject().put("t", "fg").put("pkg", pkg).put("home", TouchService.instance?.isHome(pkg) == true))
                 }
                 updateCarState()
+                startPhoneExtras()
             }
             "apps?" -> sendApps()
             "ping" -> sendCtl(JSONObject().put("t", "pong").put("ts", msg.opt("ts")))
@@ -312,9 +317,23 @@ class CarPeer(
             "launch" -> (sessions[sid] as? ScreenSession)?.launch(msg.optString("pkg"))
             "audio" -> if (msg.optBoolean("on")) audio.start() else audio.stop()
             "keyboard" -> {
-                keyboard = msg.optBoolean("on", true)
-                sessions.values.forEach { it.setKeyboard(keyboard) }
+                // 1.8.1 cars send only {on}
+                keyboardMode = msg.optString("mode", if (msg.optBoolean("on", true)) "on" else "off")
+                applyKeyboard()
             }
+            "type" -> {
+                if (!carKeyboard) {
+                    // a keyboard plugged into the car: Auto hides the on-screen one from now on
+                    carKeyboard = true
+                    applyKeyboard()
+                }
+                sessions[sid]?.typeKey(msg.optString("k"), msg.optBoolean("c"), msg.optBoolean("s"))
+            }
+            "voice" -> {
+                voiceSid = sid
+                if (msg.optBoolean("stop")) VoiceActivity.stop() else VoiceActivity.start(TouchService.instance ?: context)
+            }
+            "notifs" -> notifs = msg.optBoolean("on", true)
             "mediaKey" -> mediaKey(msg.optString("k"))
             "resize" -> sessions[sid]?.resize(msg.optInt("w"), msg.optInt("h"))
             "reconfigure" -> sessions[sid]?.reconfigure(
@@ -339,8 +358,84 @@ class CarPeer(
         }
     }
 
-    /** The car's "on-screen keyboard" setting (off when typing on a physical keyboard). */
+    // ------------------------------------------------------------ keyboard, voice, notifications
+
+    /** The car's "On-screen keyboard" setting: "auto" (hidden while a physical keyboard is in use), "on" or "off". */
+    @Volatile private var keyboardMode = "auto"
+    /** Someone typed on a keyboard plugged into the car during this connection. */
+    @Volatile private var carKeyboard = false
     @Volatile private var keyboard = true
+    /** The car's "Notifications" setting. */
+    @Volatile private var notifs = true
+    @Volatile private var voiceSid = -1L
+    private val inputManager = context.getSystemService(InputManager::class.java)
+    private val keyboardWatcher = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = post { applyKeyboard() }
+        override fun onInputDeviceRemoved(deviceId: Int) = post { applyKeyboard() }
+        override fun onInputDeviceChanged(deviceId: Int) = post { applyKeyboard() }
+    }
+
+    /** A real keyboard connected to the phone (Bluetooth or USB), not the on-screen one. */
+    private fun phoneKeyboard() = InputDevice.getDeviceIds().any { id ->
+        val d = InputDevice.getDevice(id)
+        d != null && !d.isVirtual && d.isExternal && d.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
+    }
+
+    private fun applyKeyboard() {
+        val show = when (keyboardMode) {
+            "off" -> false
+            "on" -> true
+            else -> !carKeyboard && !phoneKeyboard()
+        }
+        if (show == keyboard) return
+        keyboard = show
+        Log.i(tag, "on-screen keyboard ${if (show) "shown" else "hidden"} (mode $keyboardMode, car keyboard $carKeyboard)")
+        sessions.values.forEach { it.setKeyboard(show) }
+    }
+
+    private fun startPhoneExtras() {
+        inputManager.registerInputDeviceListener(keyboardWatcher, Handler(Looper.getMainLooper()))
+        applyKeyboard()
+        CarNotifications.listener = notificationListener
+        CarNotifications.currentNav()?.let { m -> post { sendNotification(m) } }
+        Voice.listener = voiceListener
+    }
+
+    private val notificationListener: (JSONObject) -> Unit = { m ->
+        post { if (m.optString("t") == "nav" || notifs) sendNotification(m) }
+    }
+    private val voiceListener: (Voice.Event) -> Unit = { e -> post { onVoice(e) } }
+
+    private fun stopPhoneExtras() {
+        runCatching { inputManager.unregisterInputDeviceListener(keyboardWatcher) }
+        // a newer connection may already have taken over
+        if (CarNotifications.listener === notificationListener) CarNotifications.listener = null
+        if (Voice.listener === voiceListener) Voice.listener = null
+    }
+
+    private fun sendNotification(m: JSONObject) {
+        val pkg = m.optString("pkg")
+        if (pkg.isNotEmpty() && pkg !in sentIcons) {
+            sentIcons += pkg
+            Apps.iconPngBase64(context, pkg)?.let { sendCtl(JSONObject().put("t", "icon").put("pkg", pkg).put("icon", it)) }
+        }
+        sendCtl(m)
+    }
+
+    private fun onVoice(e: Voice.Event) {
+        val msg = JSONObject().put("t", "voice").put("sid", voiceSid)
+        when (e) {
+            Voice.Listening -> msg.put("state", "listening")
+            is Voice.Partial -> msg.put("state", "partial").put("text", e.text)
+            is Voice.Error -> msg.put("state", "error").put("msg", e.message)
+            is Voice.Done -> {
+                val typed = sessions[voiceSid]?.typeText(e.text) == true
+                msg.put("state", "done").put("text", e.text)
+                if (!typed) msg.put("msg", "Tap a text field first")
+            }
+        }
+        sendCtl(msg)
+    }
 
     private data class StartParams(val sid: Long, val pkg: String, val w: Int, val h: Int, val dpi: Int, val fps: Int, val bitrate: Int)
 
@@ -499,6 +594,7 @@ class CarPeer(
         if (notify) runCatching { sendSignal(JSONObject().put("type", "bye").put("reason", reason)) }
         sessions.values.forEach { it.stop() }
         sessions.clear()
+        stopPhoneExtras()
         audio.stop()
         relay?.close()
         AppState.sessions.value = 0
