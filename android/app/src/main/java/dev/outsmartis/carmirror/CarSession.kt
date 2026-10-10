@@ -19,6 +19,10 @@ interface CarSession {
     fun reconfigure(w: Int, h: Int, dpi: Int, fps: Int, bitrate: Int)
     /** Show the on-screen keyboard (off when the driver types on a physical keyboard). */
     fun setKeyboard(show: Boolean)
+    /** A key from a keyboard plugged into the car: a character or a browser key name ("Enter", "ArrowLeft"…). */
+    fun typeKey(key: String, ctrl: Boolean, shift: Boolean)
+    /** Text at the cursor (voice typing). False when it surely went nowhere (no text field has focus). */
+    fun typeText(text: String): Boolean
     /** Diagnostic output to ship to the car when the session failed. */
     val fullLog: String?
 }

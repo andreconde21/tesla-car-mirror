@@ -271,6 +271,12 @@ class ScreenSession(
         restart = true
     }
 
+    override fun typeKey(key: String, ctrl: Boolean, shift: Boolean) {
+        TouchService.instance?.typeKey(key, ctrl, shift)
+    }
+
+    override fun typeText(text: String): Boolean = TouchService.instance?.typeText(text) == true
+
     /** The phone's own keyboard: the accessibility service can hide it while the car is showing. */
     override fun setKeyboard(show: Boolean) {
         val svc = TouchService.instance ?: return

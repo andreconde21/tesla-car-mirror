@@ -29,7 +29,14 @@ function save(key, value) {
   }
 }
 
-const settings = Object.assign({ bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false, keyboard: true }, load('cm.settings', {}));
+const savedSettings = load('cm.settings', {});
+// 1.8.1 had an on/off keyboard switch: "off" stays off, "on" becomes Auto
+if (savedSettings.kbd == null && savedSettings.keyboard === false) savedSettings.kbd = 'off';
+delete savedSettings.keyboard;
+const settings = Object.assign(
+  { bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false, kbd: 'auto', notifs: true },
+  savedSettings,
+);
 const zoom = load('cm.zoom', {}); // per-app zoom factor (car-sized screens)
 const audio = new AudioPlayer();
 audio.setEnabled(settings.sound);
@@ -222,7 +229,8 @@ function onLinkOpen() {
   });
   state.link.sendCtl({ t: 'apps?' });
   state.link.sendCtl({ t: 'audio', on: settings.sound && AudioPlayer.supported() });
-  state.link.sendCtl({ t: 'keyboard', on: settings.keyboard });
+  sendKeyboardMode();
+  state.link.sendCtl({ t: 'notifs', on: settings.notifs });
   buildPanes();
   show('panes');
   refreshPath();
@@ -342,6 +350,17 @@ function onCtl(msg) {
     case 'media':
       updateMediaSession(msg);
       break;
+    case 'nav':
+      showNav(msg);
+      break;
+    case 'notif':
+      if (settings.notifs) showNotification(msg);
+      break;
+    case 'voice': {
+      const pane = state.panes.find((p) => p.sid === msg.sid);
+      onVoice(pane, msg);
+      break;
+    }
     case 'stats': {
       const pane = state.panes.find((p) => p.sid === msg.sid);
       if (pane) pane.onPhoneStats(msg);
@@ -359,6 +378,98 @@ function onCtl(msg) {
     default:
       break;
   }
+}
+
+// ------------------------------------------------------------------ keyboard, voice, navigation, notifications
+
+/** "auto" | "on" | "off"; `on` is for 1.8.1 phones, which only know a switch. */
+function sendKeyboardMode() {
+  state.link?.sendCtl({ t: 'keyboard', mode: settings.kbd, on: settings.kbd !== 'off' });
+}
+
+/** The pane keys go to: the one last touched, else the first showing an app. */
+function typingPane() {
+  const p = state.activePane;
+  if (p && p.sid && state.panes.includes(p)) return p;
+  return state.panes.find((x) => x.sid) || null;
+}
+
+const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'Dead', 'Unidentified', 'Process', 'Compose']);
+
+/** A keyboard plugged into the car: every key goes to the app on the car screen. */
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || MODIFIERS.has(e.key)) return;
+  if ($('#settings').open || !$('#screen-pair').hidden) return;
+  if (e.target instanceof HTMLElement && e.target.closest('input, select, textarea')) return;
+  const pane = typingPane();
+  if (!pane || !state.link) return;
+  // AltGr reports Ctrl+Alt on some keyboards: that's a character (@, €), not a shortcut
+  const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
+  e.preventDefault();
+  state.link.sendCtl({ t: 'type', sid: pane.sid, k: e.key, c: ctrl, s: e.shiftKey });
+});
+
+let voiceTimer = null;
+function onVoice(pane, msg) {
+  const done = msg.state === 'done' || msg.state === 'error';
+  for (const p of state.panes) $('.mic', p.el).classList.toggle('listening', !done && p === pane);
+  clearTimeout(voiceTimer);
+  if (msg.state === 'listening') toast('Listening…', 15000);
+  else if (msg.state === 'partial') toast(msg.text, 15000);
+  else if (msg.state === 'done') toast(msg.msg ? `${msg.msg}: “${msg.text}”` : `“${msg.text}”`, msg.msg ? 6000 : 2500);
+  else if (msg.state === 'error') toast(msg.msg || 'Voice typing failed', 5000);
+  // the phone went quiet (closed, crashed): don't leave the button red
+  if (!done) voiceTimer = setTimeout(() => onVoice(null, { state: 'error', msg: 'Voice typing stopped' }), 20000);
+}
+
+function showNav(msg) {
+  const el = $('#nav');
+  if (msg.off) {
+    el.hidden = true;
+    return;
+  }
+  const img = $('.nav-icon', el);
+  const icon = msg.icon || state.icons?.[msg.pkg];
+  img.hidden = !icon;
+  if (icon) img.src = 'data:image/png;base64,' + icon;
+  $('.nav-title', el).textContent = msg.title || '';
+  $('.nav-text', el).textContent = [msg.text, msg.sub].filter(Boolean).join(' · ');
+  el.dataset.pkg = msg.pkg || '';
+  el.hidden = false;
+}
+
+/** Opens a phone app in the car (first pane), or brings it up if it's already there. */
+function openApp(pkg) {
+  if (!pkg) return;
+  const shown = state.panes.find((p) => p.app && p.app.pkg === pkg && p.sid);
+  if (shown) return;
+  const app = state.apps.find((a) => a.pkg === pkg) || { pkg, label: pkg };
+  const pane = state.panes[0];
+  if (!pane) return;
+  if (pane.sid && state.mode === 'screen') {
+    state.link?.sendCtl({ t: 'launch', sid: pane.sid, pkg: app.pkg });
+    pane.app = app;
+    pane.hideOverlay();
+    pane.setChrome();
+    savePanes();
+  } else {
+    pane.open(app);
+  }
+}
+
+let notifTimer = null;
+function showNotification(msg) {
+  const el = $('#notif');
+  const icon = state.icons?.[msg.pkg];
+  const img = $('.notif-icon', el);
+  img.hidden = !icon;
+  if (icon) img.src = 'data:image/png;base64,' + icon;
+  $('.notif-title', el).textContent = msg.title ? `${msg.title} · ${msg.app}` : msg.app;
+  $('.notif-text', el).textContent = msg.text || '';
+  el.dataset.pkg = msg.pkg;
+  el.hidden = false;
+  clearTimeout(notifTimer);
+  notifTimer = setTimeout(() => (el.hidden = true), 8000);
 }
 
 // ------------------------------------------------------------------ Tesla media card
@@ -434,6 +545,14 @@ class Pane {
 
     $('.back', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'key', sid: this.sid, k: 'back' });
     $('.keyframe', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'reset', sid: this.sid });
+    $('.mic', this.el).onclick = () => {
+      if (!this.sid) return;
+      const listening = $('.mic', this.el).classList.contains('listening');
+      state.link?.sendCtl({ t: 'voice', sid: this.sid, stop: listening });
+      if (!listening) onVoice(this, { state: 'listening' });
+    };
+    // keys from a car keyboard go to the pane touched last
+    this.el.addEventListener('pointerdown', () => (state.activePane = this), true);
     $('.zoom-out', this.el).onclick = () => this.zoomBy(1 / 1.15);
     $('.zoom-in', this.el).onclick = () => this.zoomBy(1.15);
     $('.apps', this.el).onclick = () => {
@@ -459,6 +578,7 @@ class Pane {
     const running = !!this.sid;
     $('.back', this.el).hidden = !running;
     $('.keyframe', this.el).hidden = !running;
+    $('.mic', this.el).hidden = !running;
     $('.zoom-out', this.el).hidden = !running || state.mode !== 'apps';
     $('.zoom-in', this.el).hidden = !running || state.mode !== 'apps';
     $('.apps', this.el).hidden = !running;
@@ -763,6 +883,11 @@ function restorePanes() {
 // ------------------------------------------------------------------ chrome buttons
 
 function setupChrome() {
+  $('#nav').onclick = () => openApp($('#nav').dataset.pkg);
+  $('#notif').onclick = () => {
+    $('#notif').hidden = true;
+    openApp($('#notif').dataset.pkg);
+  };
   $('#btn-layout').onclick = () => setLayout(state.layout === 'split' ? 'full' : 'split');
   $('#btn-immersive').onclick = () => {
     document.body.classList.add('immersive');
@@ -782,7 +907,8 @@ function setupChrome() {
     $('#set-focus').checked = !!settings.focus;
     $('#set-sound').checked = !!settings.sound;
     $('#set-relay').checked = !!settings.relay;
-    $('#set-keyboard').checked = !!settings.keyboard;
+    $('#set-kbd').value = settings.kbd;
+    $('#set-notifs').checked = !!settings.notifs;
     $('#row-scale').hidden = state.mode === 'screen';
     $('#btn-forget').hidden = !state.paired;
     $('#about').textContent = `CarMirror ${VERSION} · ${navigator.userAgent}`;
@@ -807,9 +933,14 @@ function setupChrome() {
 audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
       state.link?.sendCtl({ t: 'audio', on: settings.sound });
     }
-    if (settings.keyboard !== $('#set-keyboard').checked) {
-      settings.keyboard = $('#set-keyboard').checked;
-      state.link?.sendCtl({ t: 'keyboard', on: settings.keyboard });
+    if (settings.kbd !== $('#set-kbd').value) {
+      settings.kbd = $('#set-kbd').value;
+      sendKeyboardMode();
+    }
+    if (settings.notifs !== $('#set-notifs').checked) {
+      settings.notifs = $('#set-notifs').checked;
+      state.link?.sendCtl({ t: 'notifs', on: settings.notifs });
+      if (!settings.notifs) $('#notif').hidden = true;
     }
     save('cm.settings', settings);
     const streamChanged = before !== JSON.stringify([settings.bitrate, settings.fps, settings.scale]);

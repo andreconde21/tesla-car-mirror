@@ -13,6 +13,9 @@
   <div id="app">
     <header id="topbar">
       <div class="brand"><span id="dot" class="dot"></span><span id="status">Starting…</span></div>
+      <button id="nav" class="nav-card" hidden title="Navigation">
+        <img class="nav-icon" alt=""><span class="nav-title"></span><span class="nav-text"></span>
+      </button>
       <div class="top-actions">
         <button id="btn-layout" class="chip" hidden>Split</button>
         <button id="btn-immersive" class="chip" hidden title="Hide bars">Hide bars</button>
@@ -75,7 +78,14 @@
         </label>
         <label class="row"><input type="checkbox" id="set-relay"> Connect through the server when the direct link fails (uses mobile data both ways)</label>
         <label class="row"><input type="checkbox" id="set-sound"> Sound through the car (the phone sends its audio; Tesla plays the browser)</label>
-        <label class="row"><input type="checkbox" id="set-keyboard"> On-screen keyboard (turn off when typing on a physical keyboard)</label>
+        <label>On-screen keyboard
+          <select id="set-kbd">
+            <option value="auto">Auto: hidden while a physical keyboard is in use</option>
+            <option value="on">Always show</option>
+            <option value="off">Never show (physical keyboard only)</option>
+          </select>
+        </label>
+        <label class="row"><input type="checkbox" id="set-notifs"> Notifications from the phone (short banners; needs notification access on the phone)</label>
         <label class="row"><input type="checkbox" id="set-focus"> Focus mode: hide the phone's status bar, navigation bar and home screen</label>
         <label class="row"><input type="checkbox" id="set-stats"> Show stats overlay</label>
         <p class="muted small">Changing quality restarts what is showing (a second or two).</p>
@@ -88,6 +98,10 @@
     </dialog>
 
     <div id="toast" class="toast" hidden></div>
+    <button id="notif" class="notif" hidden>
+      <img class="notif-icon" alt="">
+      <span class="notif-body"><b class="notif-title"></b><span class="notif-text"></span></span>
+    </button>
   </div>
 
   <template id="tpl-pane">
@@ -98,6 +112,7 @@
         <span class="pane-stats"></span>
         <button class="pb zoom-out" title="Smaller" hidden>A−</button>
         <button class="pb zoom-in" title="Bigger" hidden>A+</button>
+        <button class="pb mic" title="Voice typing" aria-label="Voice typing"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg></button>
         <button class="pb keyframe" title="Refresh picture">⟳</button>
         <button class="pb apps" title="Apps">▦ Apps</button>
         <button class="pb close" title="Close app">✕</button>

@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
         var touchOn by remember { mutableStateOf(TouchService.isEnabled(this)) }
         var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(this)) }
         var audioOn by remember { mutableStateOf(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) }
+        var notifsOn by remember { mutableStateOf(CarNotifications.isEnabled(this)) }
         var addresses by remember { mutableStateOf(localAddresses()) }
         val allApps = remember { Apps.launchable(this) }
         var favorites by remember { mutableStateOf(Apps.favorites(this, prefs).map { it.pkg }.toSet()) }
@@ -133,6 +134,7 @@ class MainActivity : ComponentActivity() {
                 touchOn = touchOnFlow || TouchService.isEnabled(this@MainActivity)
                 overlayOn = Settings.canDrawOverlays(this@MainActivity)
                 audioOn = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                notifsOn = CarNotifications.isEnabled(this@MainActivity)
                 ShizukuBridge.refresh()
                 delay(3000)
             }
@@ -243,7 +245,7 @@ class MainActivity : ComponentActivity() {
                                         done = audioOn,
                                         title = "Sound in the car (without Shizuku)",
                                         body = "Sound rides on screen sharing and needs the audio permission (Android calls it microphone; " +
-                                            "CarMirror only captures what apps play).",
+                                            "CarMirror only captures what apps play). It also turns on voice typing from the car.",
                                     ) {
                                         OutlinedButton(onClick = { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 2) }) { Text("Allow") }
                                     }
@@ -283,6 +285,30 @@ class MainActivity : ComponentActivity() {
                                                 carBt = null
                                             }) { Text("Off") }
                                         }
+                                    }
+                                }
+                                if (shizukuOn) {
+                                    Step(
+                                        done = audioOn,
+                                        title = "Voice typing from the car (optional)",
+                                        body = "The car's mic button types what you say into the text field on the car screen. " +
+                                            "CarMirror only listens while you use it.",
+                                    ) {
+                                        OutlinedButton(onClick = { requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 2) }) { Text("Allow") }
+                                    }
+                                }
+                                Step(
+                                    done = notifsOn,
+                                    title = "Navigation and notifications in the car (optional)",
+                                    body = "Shows the next turn from Google Maps or Waze, and new messages as short banners " +
+                                        "(banners can be turned off in the car's Settings). If the switch is greyed out: " +
+                                        "App info → ⋮ → Allow restricted settings.",
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Notification access") }
+                                        OutlinedButton(onClick = {
+                                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                                        }) { Text("App info") }
                                     }
                                 }
                                 if (!ignoringBatteryOptimizations()) {
