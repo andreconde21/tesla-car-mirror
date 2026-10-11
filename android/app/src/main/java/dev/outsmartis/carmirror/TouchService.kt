@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
+import android.os.Bundle
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.os.Handler
 import android.os.Looper
@@ -188,6 +190,84 @@ class TouchService : AccessibilityService() {
                 "home" -> GLOBAL_ACTION_HOME
                 "recents" -> GLOBAL_ACTION_RECENTS
                 else -> GLOBAL_ACTION_BACK
+            },
+        )
+    }
+
+    // ------------------------------------------------------------ typing (screen mode)
+
+    /**
+     * A key from the car's keyboard, applied to the focused text field (screen mode can't inject
+     * keys without Shizuku, but an accessibility service can edit the field it is in).
+     */
+    fun typeKey(key: String, ctrl: Boolean, shift: Boolean) = main.post {
+        val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (key == "Escape") {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            return@post
+        }
+        if (node == null) return@post
+        val (text, a, b) = fieldState(node)
+        when {
+            ctrl && key.equals("a", true) -> select(node, 0, text.length)
+            ctrl && key.equals("c", true) -> node.performAction(AccessibilityNodeInfo.ACTION_COPY)
+            ctrl && key.equals("x", true) -> node.performAction(AccessibilityNodeInfo.ACTION_CUT)
+            ctrl && key.equals("v", true) -> node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            ctrl -> {}
+            key == "Enter" -> {
+                if (!node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id) && node.isMultiLine) {
+                    replace(node, text, a, b, "\n")
+                }
+            }
+            key == "Backspace" -> when {
+                a != b -> replace(node, text, a, b, "")
+                a > 0 -> replace(node, text, a - 1, a, "")
+            }
+            key == "Delete" -> when {
+                a != b -> replace(node, text, a, b, "")
+                b < text.length -> replace(node, text, a, a + 1, "")
+            }
+            key == "ArrowLeft" -> if (shift) select(node, a, maxOf(a, b - 1)) else select(node, if (a != b) a else maxOf(0, a - 1))
+            key == "ArrowRight" -> if (shift) select(node, a, minOf(text.length, b + 1)) else select(node, if (a != b) b else minOf(text.length, b + 1))
+            key == "Home" || key == "ArrowUp" -> if (shift) select(node, a, 0) else select(node, 0)
+            key == "End" || key == "ArrowDown" -> if (shift) select(node, a, text.length) else select(node, text.length)
+            key == " " || (key.length <= 2 && key !in Typing.NAMED) -> replace(node, text, a, b, key)
+        }
+    }
+
+    /** Text from voice typing, at the cursor of the focused field. False when no field has focus. */
+    fun typeText(s: String): Boolean {
+        val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        val (text, a, b) = fieldState(node)
+        replace(node, text, a, b, s)
+        return true
+    }
+
+    /** Field text (empty while it shows its hint) and the selection, ordered. */
+    private fun fieldState(node: AccessibilityNodeInfo): Triple<String, Int, Int> {
+        val text = if (node.isShowingHintText) "" else node.text?.toString().orEmpty()
+        var a = node.textSelectionStart
+        var b = node.textSelectionEnd
+        if (a < 0 || b < 0) {
+            a = text.length
+            b = text.length
+        }
+        return Triple(text, minOf(a, b, text.length), minOf(maxOf(a, b), text.length))
+    }
+
+    private fun replace(node: AccessibilityNodeInfo, text: String, a: Int, b: Int, with: String) {
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text.replaceRange(a, b, with))
+        }
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) select(node, a + with.length)
+    }
+
+    private fun select(node: AccessibilityNodeInfo, start: Int, end: Int = start) {
+        node.performAction(
+            AccessibilityNodeInfo.ACTION_SET_SELECTION,
+            Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, start)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, end)
             },
         )
     }

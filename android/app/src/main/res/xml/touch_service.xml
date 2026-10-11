@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Window layout only (where the status and navigation bars are, which app is in front):
-     CarMirror never reads what apps show. -->
+<!-- Window layout (where the status and navigation bars are, which app is in front) and, when
+     you type from the car in screen mode, the text field that has focus, to edit it. CarMirror
+     doesn't read or keep anything else apps show. -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric"

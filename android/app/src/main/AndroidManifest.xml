@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- only for sound in the car without Shizuku (playback capture needs it) -->
+    <!-- and voice typing from the car's mic button -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- reaching the car on the hotspot: local-network access on newer Android versions -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
@@ -32,6 +33,10 @@
             <category android:name="android.intent.category.HOME" />
         </intent>
         <package android:name="moe.shizuku.privileged.api" />
+        <intent>
+            <!-- voice typing -->
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
 
     <application
@@ -68,6 +73,25 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:theme="@style/Theme.CarMirror.Transparent" />
+
+        <!-- voice typing: its own task, so closing it returns to the app being typed in -->
+        <activity
+            android:name=".VoiceActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.CarMirror.Transparent" />
+
+        <service
+            android:name=".CarNotifications"
+            android:exported="false"
+            android:label="CarMirror notifications in the car"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".TouchService"
