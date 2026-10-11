@@ -65,8 +65,8 @@
     <h2>What it does</h2>
     <div class="features">
       <div class="feature"><b>Any Android app</b><span>YouTube for the passenger, navigation, music, your own apps. Pick which ones show up in the car.</span></div>
-      <div class="feature"><b>Fast</b><span>Video goes straight from the phone to the car over the hotspot, decoded in hardware. No cloud relay in the way.</span></div>
-      <div class="feature"><b>Touch works</b><span>Tap, swipe, type: the car screen controls the phone. The keyboard shows up on the car screen.</span></div>
+      <div class="feature"><b>Fast</b><span>Video goes straight from the phone to the car over the hotspot, decoded in hardware. The server is only a fallback when the direct link fails.</span></div>
+      <div class="feature"><b>Touch works</b><span>Tap, swipe, type: the car screen controls the phone. The phone's keyboard shows up on the car screen, or turn it off in Settings and type on a physical keyboard.</span></div>
       <div class="feature"><b>Made for driving</b><span>The picture is drawn on a canvas, not a video player, which is what the browser blocks while the car moves.</span></div>
       <div class="feature"><b>Car-sized apps</b><span>With Shizuku running, each app gets its own screen at the Tesla's exact size, and split view for two apps side by side.</span></div>
       <div class="feature"><b>Focus mode</b><span>Hides the phone's status bar, navigation bar and home screen, so only the app shows.</span></div>
@@ -104,16 +104,18 @@
     <div>
     <ol>
       <li><b>Install the app</b> from <a href="/get">the download page</a>. Your browser will ask to allow installing apps from it.</li>
-      <li><b>Open CarMirror</b> and follow "1 · Phone setup":
+      <li><b>Open CarMirror</b> and follow <b>Setup</b>:
         <ul>
           <li><b>Touch from the car:</b> Settings → Accessibility → Installed apps → CarMirror → on.
             If the switch is greyed out: App info → <b>⋮</b> (top right) → <b>Allow restricted settings</b>, then try again.
             (Android asks this for apps not installed from the Play Store.)</li>
           <li><b>Open apps from the car:</b> allow "Display over other apps".</li>
+          <li><b>Let CarMirror run in the background</b>, so Android doesn't stop it during a drive.</li>
         </ul>
       </li>
-      <li><b>Pick your apps</b> in "3 · Apps shown in the car".</li>
-      <li>Optional, for car-sized screens: install Shizuku and start it with <b>Wireless debugging</b> (needs Wi-Fi, once after every phone restart). Then tap <b>Allow</b> in CarMirror.</li>
+      <li><b>Pick your apps</b> in <b>Apps in the car</b>.</li>
+      <li>Recommended: install Shizuku and start it with <b>Wireless debugging</b> (needs Wi-Fi, once after every phone restart). Then tap <b>Allow</b> in CarMirror. It turns on the car hotspot (direct link) and car-sized screens.</li>
+      <li>Without Shizuku: allow <b>Sound in the car</b>, and tap <b>Start sharing</b> before you drive.</li>
       <li>Tip: on Samsung, a Modes &amp; Routines rule "when connected to the car's Bluetooth → turn on hotspot" makes every drive hands-free.</li>
     </ol>
     </div>
@@ -128,10 +130,10 @@
       <li>Turn on the phone's hotspot and connect the car to it (car Wi-Fi settings).</li>
       <li>Open the car's browser at <code>carmirror.outsmartis.dev</code>.</li>
       <li>The first time, type the 6-digit code shown in the phone app. The car stays paired after that.</li>
-      <li>Tap an app. Without Shizuku, the phone asks once per drive to share its screen: tap <b>Start now</b>.</li>
+      <li>Tap an app. Without Shizuku, the phone asks once per drive to share its screen: tap <b>Start now</b> (or tap <b>Start sharing</b> in the phone app before you leave).</li>
     </ol>
-    <p>In the car: <b>Hide bars</b> gives the app the whole screen, and <b>Settings</b> has video quality, frame rate and focus mode. Sound comes through the car's speakers via the browser, and the car's media card shows what's playing; its play, pause and skip buttons control the phone.</p>
-    <p>Optional: pick the car's Bluetooth in the phone app's setup, and CarMirror starts when the phone connects to the car and stops when it disconnects.</p>
+    <p>In the car: <b>Hide bars</b> gives the app the whole screen, and <b>Settings</b> has video quality, frame rate, text size, focus mode, sound, the on-screen keyboard and connecting through the server. Sound comes through the car's speakers via the browser, and the car's media card shows what's playing; its play, pause and skip buttons control the phone.</p>
+    <p>Optional: pick the car's Bluetooth under <b>Start with the car</b> in the phone app, and CarMirror starts when the phone connects to the car and stops when it disconnects.</p>
 
     <h2>Two modes</h2>
     <table>
@@ -146,10 +148,10 @@
     <h2>How it works</h2>
     <div class="flow">
       <b>Phone</b>: the app encodes the picture as H.264 in hardware →
-      <b>WebRTC</b> sends it directly over the hotspot (the server only introduces the car and the phone) →
+      <b>WebRTC</b> sends it directly over the hotspot (the server introduces the car and the phone, and relays only if the direct link fails) →
       <b>Tesla browser</b>: WebCodecs decodes in hardware and draws on a canvas → your taps go back the same way.
     </div>
-    <p>Nothing you watch goes through the server. It only handles pairing and helps the two find each other.</p>
+    <p>In car mode, nothing you watch goes through the server: it only handles pairing and helps the two find each other. Without car mode, or when the direct link fails, the stream is relayed through it.</p>
 
     <h2>Good to know</h2>
     <ul>
@@ -163,7 +165,7 @@
     <h2>Something not working?</h2>
     <ul>
       <li>Open <code>carmirror.outsmartis.dev/diag</code> in the car: it checks what the browser supports.</li>
-      <li>In the phone app, "Last problem" shows the most recent error.</li>
+      <li>In the phone app, <b>Advanced</b> → "Last problem" shows the most recent error.</li>
       <li>Report issues on <a href="https://github.com/andreconde21/tesla-car-mirror/issues">GitHub</a>.</li>
     </ul>
 
