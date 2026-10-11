@@ -28,10 +28,24 @@ Android phone                                              Tesla browser (car)
   it and injects input there (`InputEvent.setDisplayId`). Encoding stays in the app process.
   Each app gets the car pane's exact size and relayouts live on resize, split and fullscreen;
   split view is two displays. The phone's keyboard shows on the car display (IME policy
-  LOCAL), or not at all when the car's "On-screen keyboard" setting is off (policy HIDE).
+  LOCAL), or not at all (policy HIDE) when the car's "On-screen keyboard" setting is Off, or
+  Auto with a physical keyboard on the phone (`InputManager` device listener) or one used in
+  the car.
 - **Screen mode** otherwise: the phone screen through MediaProjection, touches through the
   accessibility service's gestures, and focus mode cropping the system bars and replacing the
   home screen with the car's own app grid.
+
+## Typing, voice, navigation and notifications
+
+- **Car keyboard.** Key presses on the car page go to the phone as `type{sid,k,c,s}`. Per-app
+  screens inject them as key events on that display (`Typing.kt`, `KeyCharacterMap`, with an
+  `ACTION_MULTIPLE` fallback for characters it can't map); screen mode edits the focused field
+  through the accessibility service (`ACTION_SET_TEXT`, selection, `ACTION_IME_ENTER`).
+- **Voice typing.** The car's mic button starts a transparent `VoiceActivity` that runs
+  `SpeechRecognizer` (the mic needs a foreground activity) and types the result the same way.
+- **Navigation card and notifications.** `CarNotifications` (a notification listener, only
+  when the user grants access) sends the ongoing navigation notification as a card, and new
+  notifications as short banners. The car setting "Notifications" turns banners off.
 
 scrcpy is no longer used: scrcpy-server aborted natively inside MediaCodec on a Galaxy M53 /
 Android 16, while plain in-app MediaCodec works there.
@@ -95,10 +109,12 @@ Video channel `v:<sid>` (phone to car), big-endian:
 start (flags: 1 config, 2 key frame) · `[3]payload…` continuation (64 KB chunks).
 
 Control channel `ctl` (JSON): car→phone `hello`, `apps?`, `start{sid,pkg,w,h,dpi,fps,bitrate}`,
-`stop`, `touch{a,id,x,y,w,h}`, `scroll`, `key{k}`, `reset`, `resize{w,h}`, `keyboard{on}`, `ping`;
+`stop`, `touch{a,id,x,y,w,h}`, `scroll`, `key{k}`, `reset`, `resize{w,h}`, `keyboard{mode,on}`
+(mode auto/on/off), `type{sid,k,c,s}`, `voice{sid,stop}`, `notifs{on}`, `ping`;
 `audio{on}`, `mediaKey{k}`, `launch{pkg}` (screen mode);
 phone→car `caps{mode}`, `apps`, `icon`, `started`, `ended{reason}`, `stats{lag}`, `bars`, `fg{pkg,home}`,
-`media`, `log`, `status`, `error`, `pong`.
+`media`, `nav{pkg,title,text,sub,icon|off}`, `notif{pkg,app,title,text}`,
+`voice{sid,state,text,msg}`, `log`, `status`, `error`, `pong`.
 
 Audio channel `audio` (phone to car, unordered, no retransmits): `[pts µs u64][opus packet]`.
 
