@@ -23,6 +23,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <queries>
+        <!-- Yoke's smart grayscale: told when the phone is on the car screen (YokeLink) -->
+        <package android:name="com.outsmartis.yoke" />
+        <package android:name="com.outsmartis.yoke.debug" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

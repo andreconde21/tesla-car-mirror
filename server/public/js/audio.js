@@ -4,14 +4,19 @@
 //
 // Opus packets (20 ms) arrive on an unordered, no-retransmit data channel, are decoded with
 // WebCodecs and scheduled back to back on a Web Audio clock with a small, self-correcting
-// buffer: late packets are dropped rather than letting delay build up.
+// buffer: when it has grown (a burst after a network hiccup), packets play 4% faster until it is
+// back near the target, and packets that would land too far ahead are dropped, so delay never
+// builds up.
 //
 // Wire format: [pts µs: u64][opus packet]
 
 import { log, warn } from './remotelog.js';
 
-const TARGET = 0.08; // seconds of buffer we aim for
-const MAX = 0.3; // beyond this, skip ahead (latency would grow otherwise)
+const TARGET = 0.06; // seconds of buffer we aim for
+const HIGH = 0.1; // above this, play slightly fast until back at TARGET
+const CATCH_UP = 1.04; // playback rate while draining (a 4% pitch change, briefly)
+const MAX = 0.25; // beyond this, drop packets outright
+const STATS_EVERY = 30; // seconds between buffer reports in the car log
 
 export class AudioPlayer {
   constructor() {
@@ -21,6 +26,8 @@ export class AudioPlayer {
     this.gain = null;
     this.packets = 0;
     this.enabled = true;
+    this.draining = false;
+    this.stats = { n: 0, sum: 0, max: 0, fast: 0, dropped: 0, at: 0 };
     // browsers only start audio after a user gesture: any tap on the page will do
     const unlock = () => this.resume();
     document.addEventListener('pointerdown', unlock, { capture: true });
@@ -75,7 +82,10 @@ export class AudioPlayer {
     const pts = dv.getUint32(0) * 4294967296 + dv.getUint32(4);
     try {
       this.decoder.decode(new EncodedAudioChunk({ type: 'key', timestamp: pts, data: new Uint8Array(buf, 8) }));
-      if (++this.packets === 1) log('audio: first packet');
+      if (++this.packets === 1) {
+        const c = this.ctx;
+        log(`audio: first packet (output latency base ${ms(c.baseLatency)} + device ${ms(c.outputLatency)})`);
+      }
     } catch (e) {
       warn('audio decode failed: ' + e);
     }
@@ -96,16 +106,43 @@ export class AudioPlayer {
     data.close();
     const now = ctx.currentTime;
     if (this.next < now + 0.01) this.next = now + TARGET; // underrun: rebuild a small cushion
-    if (this.next > now + MAX) return; // too far behind: drop this packet to catch up
+    const ahead = this.next - now;
+    this.report(ahead, now);
+    if (ahead > MAX) {
+      this.stats.dropped++;
+      return; // far too much queued: drop this packet to catch up
+    }
     const src = ctx.createBufferSource();
     src.buffer = buffer;
+    if (ahead > HIGH) this.draining = true;
+    else if (ahead <= TARGET) this.draining = false;
+    if (this.draining) {
+      src.playbackRate.value = CATCH_UP;
+      this.stats.fast++;
+    }
     src.connect(this.gain);
     src.start(this.next);
-    this.next += buffer.duration;
+    this.next += buffer.duration / src.playbackRate.value;
+  }
+
+  /** Every STATS_EVERY seconds, how much sound sat in the buffer, for the car log. */
+  report(ahead, now) {
+    const st = this.stats;
+    st.n++;
+    st.sum += ahead;
+    st.max = Math.max(st.max, ahead);
+    if (!st.at) st.at = now;
+    if (now - st.at < STATS_EVERY) return;
+    log(`audio: buffer avg ${ms(st.sum / st.n)}, max ${ms(st.max)}, sped up ${st.fast}, dropped ${st.dropped} of ${st.n} packets`);
+    this.stats = { n: 0, sum: 0, max: 0, fast: 0, dropped: 0, at: now };
   }
 
   setEnabled(on) {
     this.enabled = on;
     if (!on) this.next = 0;
   }
+}
+
+function ms(seconds) {
+  return seconds == null ? '?' : Math.round(seconds * 1000) + ' ms';
 }
