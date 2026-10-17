@@ -229,6 +229,7 @@ function onLinkOpen() {
   });
   state.link.sendCtl({ t: 'apps?' });
   state.link.sendCtl({ t: 'audio', on: settings.sound && AudioPlayer.supported() });
+  startMediaAnchor();
   sendKeyboardMode();
   state.link.sendCtl({ t: 'notifs', on: settings.notifs });
   buildPanes();
@@ -241,6 +242,7 @@ function onLinkOpen() {
 }
 
 function onLinkClose(reason) {
+  mediaAnchor.pause();
   const hadPanes = state.panes.some((p) => p.sid);
   for (const p of state.panes) p.detach();
   state.link = null;
@@ -495,13 +497,45 @@ function updateMediaSession(m) {
 
 if ('mediaSession' in navigator) {
   const key = (k) => () => state.link?.sendCtl({ t: 'mediaKey', k });
-  for (const [action, k] of [['play', 'play'], ['pause', 'pause'], ['nexttrack', 'next'], ['previoustrack', 'prev']]) {
+  const actions = [['play', 'play'], ['pause', 'pause'], ['stop', 'pause'], ['nexttrack', 'next'], ['previoustrack', 'prev']];
+  for (const [action, k] of actions) {
     try {
       navigator.mediaSession.setActionHandler(action, key(k));
     } catch {
       // action not supported by this browser
     }
   }
+}
+
+// The phone's sound plays through Web Audio, which the browser doesn't count as a media
+// player: the card showed the title and icon but no buttons. A looping silent clip is a real
+// <audio> player, so the card gets play, pause and skip (handled above, sent to the phone).
+const mediaAnchor = new Audio(silentWav(10));
+mediaAnchor.loop = true;
+function startMediaAnchor() {
+  if (state.link && mediaAnchor.paused) mediaAnchor.play().catch(() => {}); // needs a tap first
+}
+document.addEventListener('pointerdown', startMediaAnchor, { capture: true });
+
+/** A blob URL: a WAV of [seconds] of silence (8 kHz, 8-bit mono: 80 KB for 10 s). */
+function silentWav(seconds) {
+  const n = 8000 * seconds;
+  const b = new Uint8Array(44 + n).fill(128, 44);
+  const v = new DataView(b.buffer);
+  const str = (o, t) => [...t].forEach((c, i) => (b[o + i] = c.charCodeAt(0)));
+  str(0, 'RIFF');
+  v.setUint32(4, 36 + n, true);
+  str(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, 8000, true);
+  v.setUint32(28, 8000, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true);
+  str(36, 'data');
+  v.setUint32(40, n, true);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
 }
 
 setInterval(() => {
@@ -930,7 +964,6 @@ function setupChrome() {
     settings.sound = $('#set-sound').checked;
     if (soundChanged) {
       audio.setEnabled(settings.sound);
-audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
       state.link?.sendCtl({ t: 'audio', on: settings.sound });
     }
     if (settings.kbd !== $('#set-kbd').value) {

@@ -528,6 +528,7 @@ class CarPeer(
         mediaWatcher = thread(name = "now-playing", isDaemon = true) {
             while (!closed) {
                 runCatching { reportMedia() }
+                YokeLink.carOn(context)
                 Thread.sleep(2000)
             }
         }
@@ -535,7 +536,7 @@ class CarPeer(
 
     private fun reportMedia() {
         val raw = ShizukuBridge.service?.let { runCatching { it.nowPlaying() }.getOrNull() }.orEmpty()
-        val info = if (raw.isNotEmpty()) JSONObject(raw) else {
+        val info = if (raw.isNotEmpty()) JSONObject(raw) else CarNotifications.nowPlaying(context) ?: run {
             // nothing reports a media session: name the app the car shows (per-app screens), or the app in front
             val pkg = sessions.values.lastOrNull()?.pkg ?: TouchService.instance?.foreground?.takeIf { TouchService.instance?.isHome(it) != true } ?: return
             JSONObject().put("pkg", pkg).put("title", "").put("artist", "").put("playing", true)
@@ -557,6 +558,17 @@ class CarPeer(
 
     /** The Tesla's media controls -> the phone's active media session. */
     private fun mediaKey(k: String) {
+        // straight to the session the card shows when notification access lets us see it
+        CarNotifications.mediaControllers(context).firstOrNull()?.transportControls?.let { tc ->
+            when (k) {
+                "play" -> tc.play()
+                "pause" -> tc.pause()
+                "next" -> tc.skipToNext()
+                "prev" -> tc.skipToPrevious()
+                else -> return@let
+            }
+            return
+        }
         val code = when (k) {
             "play" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY
             "pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
@@ -596,6 +608,7 @@ class CarPeer(
         sessions.clear()
         stopPhoneExtras()
         audio.stop()
+        YokeLink.carOff(context)
         relay?.close()
         AppState.sessions.value = 0
         AppState.car.value = null

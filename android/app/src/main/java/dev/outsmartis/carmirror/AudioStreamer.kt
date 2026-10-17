@@ -103,7 +103,12 @@ class AudioStreamer(private val context: Context, private val onLog: (String) ->
                     AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE)
                         .setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
                 )
-                .setBufferSizeInBytes(FRAME_BYTES * 8)
+                .setBufferSizeInBytes(
+                    maxOf(
+                        AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT),
+                        FRAME_BYTES * 3,
+                    ),
+                )
                 .build()
         } catch (e: Exception) {
             Log.w(tag, "playback capture: $e")
@@ -132,6 +137,18 @@ class AudioStreamer(private val context: Context, private val onLog: (String) ->
         var samples = 0L
         try {
             while (running) {
+                // Sound that queued up (the Shizuku pipe holds ~330 ms, e.g. while the encoder
+                // started) would stay as delay for the whole session: drop it, keep one frame.
+                val backlog = runCatching { input.available() }.getOrDefault(0)
+                if (backlog > FRAME_BYTES * 3) {
+                    var drop = (backlog - FRAME_BYTES) / 4 * 4 // whole stereo samples
+                    onLog("audio: dropped ${drop * 1000L / (RATE * 4)} ms of queued sound")
+                    while (drop > 0) {
+                        val n = input.read(pcm, 0, minOf(drop, pcm.size))
+                        if (n < 0) throw IllegalStateException("audio source closed")
+                        drop -= n
+                    }
+                }
                 // one 20 ms frame in
                 var got = 0
                 while (got < pcm.size) {
@@ -172,7 +189,8 @@ class AudioStreamer(private val context: Context, private val onLog: (String) ->
         val dc = channel ?: return
         if (dc.state() != DataChannel.State.OPEN) return
         // nothing piles up: if the link is congested, a dropped audio packet beats a delayed one
-        if (dc.bufferedAmount() > 64 * 1024) return
+        // (4 KB is ~250 ms at 128 kbit/s)
+        if (dc.bufferedAmount() > 4 * 1024) return
         dc.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), true))
     }
 

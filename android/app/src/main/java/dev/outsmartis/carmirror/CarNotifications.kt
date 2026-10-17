@@ -6,6 +6,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Icon
+import android.media.MediaMetadata
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -122,6 +126,28 @@ class CarNotifications : NotificationListenerService() {
             val sbn = runCatching { s.activeNotifications }.getOrNull()?.firstOrNull { s.isNavigation(it) } ?: return null
             s.navKey = sbn.key
             return s.navigation(sbn)
+        }
+
+        /**
+         * The phone's media sessions, playing one first. Notification access is what lets an app
+         * read them, so this works without Shizuku; empty when access isn't granted.
+         */
+        fun mediaControllers(context: Context): List<MediaController> {
+            if (instance == null) return emptyList()
+            val msm = context.getSystemService(MediaSessionManager::class.java) ?: return emptyList()
+            val all = runCatching { msm.getActiveSessions(ComponentName(context, CarNotifications::class.java)) }
+                .getOrNull().orEmpty()
+            return all.sortedByDescending { it.playbackState?.state == PlaybackState.STATE_PLAYING }
+        }
+
+        /** What's playing, in the shape PrivilegedService.nowPlaying() sends; null when unknown. */
+        fun nowPlaying(context: Context): JSONObject? {
+            val c = mediaControllers(context).firstOrNull() ?: return null
+            val md = c.metadata
+            return JSONObject().put("pkg", c.packageName)
+                .put("title", md?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty())
+                .put("artist", (md?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: md?.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST)).orEmpty())
+                .put("playing", c.playbackState?.state == PlaybackState.STATE_PLAYING)
         }
 
         fun isEnabled(context: Context): Boolean {

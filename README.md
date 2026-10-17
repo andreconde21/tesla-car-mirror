@@ -74,10 +74,15 @@ Android 16, while plain in-app MediaCodec works there.
   packets, unordered, no retransmits) and the car plays it with WebAudio. Source: the phone's
   output via remote submix with Shizuku (the phone goes quiet), else playback capture.
 - **Tesla media card.** The car page's Media Session shows what's playing on the phone (title
-  with Shizuku, else the app in front); its play, pause and skip buttons control the phone.
+  with Shizuku or notification access, else the app in front); its play, pause and skip buttons
+  control the phone. The page loops a silent `<audio>` clip: Web Audio alone doesn't count as a
+  media player, and the card then shows the title but no buttons.
 - **Backpressure:** if the data channel backs up, the phone drops frames up to the next key
   frame and requests one, so delay can't build up. If the phone's encoder falls behind (more
   than 1.2 s for about 6 s), the car reopens the app at 2/3 resolution and 30 fps.
+- **Colour with Yoke's grayscale:** while a car is connected, CarMirror tells the Yoke launcher
+  (`YokeLink.kt`, a broadcast every 4 min and one on disconnect) so its smart grayscale keeps
+  the phone, and the car, in colour.
 - **Start with the car:** pick the car's Bluetooth in the phone app and CarMirror starts when
   the phone connects to it and stops when it disconnects.
 
