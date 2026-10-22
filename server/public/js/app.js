@@ -34,12 +34,12 @@ const savedSettings = load('cm.settings', {});
 if (savedSettings.kbd == null && savedSettings.keyboard === false) savedSettings.kbd = 'off';
 delete savedSettings.keyboard;
 const settings = Object.assign(
-  { bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, relay: false, kbd: 'auto', notifs: true },
+  { bitrate: 8, fps: 60, scale: 1.5, stats: false, focus: true, sound: true, mutedApps: [], relay: false, kbd: 'auto', notifs: true },
   savedSettings,
 );
 const zoom = load('cm.zoom', {}); // per-app zoom factor (car-sized screens)
 const audio = new AudioPlayer();
-audio.setEnabled(settings.sound);
+let soundOn = null; // last sound on/off sent to the phone, null while there's no link
 audio.onNeedGesture = () => toast('Tap the screen once to turn on the sound', 6000);
 
 const state = {
@@ -228,8 +228,8 @@ function onLinkOpen() {
     screen: { w: screen.width, h: screen.height, dpr: devicePixelRatio, vw: innerWidth, vh: innerHeight },
   });
   state.link.sendCtl({ t: 'apps?' });
-  state.link.sendCtl({ t: 'audio', on: settings.sound && AudioPlayer.supported() });
-  startMediaAnchor();
+  soundOn = null;
+  applySound();
   sendKeyboardMode();
   state.link.sendCtl({ t: 'notifs', on: settings.notifs });
   buildPanes();
@@ -243,6 +243,7 @@ function onLinkOpen() {
 
 function onLinkClose(reason) {
   mediaAnchor.pause();
+  soundOn = null;
   const hadPanes = state.panes.some((p) => p.sid);
   for (const p of state.panes) p.detach();
   state.link = null;
@@ -474,6 +475,43 @@ function showNotification(msg) {
   notifTimer = setTimeout(() => (el.hidden = true), 8000);
 }
 
+// ------------------------------------------------------------------ sound on/off
+
+/** Sound comes through the car unless it's off in Settings or every app showing is muted. */
+function soundWanted() {
+  if (!settings.sound || !AudioPlayer.supported()) return false;
+  const pkgs = state.panes.filter((p) => p.sid && p.app).map((p) => p.app.pkg);
+  return !pkgs.length || pkgs.some((pkg) => !settings.mutedApps.includes(pkg));
+}
+
+/** Sound on or off on both ends: the phone stops capturing, so its own audio (Bluetooth) is back. */
+function applySound() {
+  for (const p of state.panes) p.setSoundButton();
+  const on = soundWanted();
+  if (!state.link || on === soundOn) return;
+  soundOn = on;
+  audio.setEnabled(on);
+  state.link.sendCtl({ t: 'audio', on });
+  if (on) startMediaAnchor();
+  else mediaAnchor.pause();
+  log('sound ' + (on ? 'on' : 'off'));
+}
+
+/** The pane's speaker: mutes or unmutes this app (and turns sound back on if it was off in Settings). */
+function toggleAppSound(pkg) {
+  const muted = settings.mutedApps.includes(pkg);
+  if (!settings.sound) {
+    settings.sound = true;
+    settings.mutedApps = settings.mutedApps.filter((p) => p !== pkg);
+  } else if (muted) {
+    settings.mutedApps = settings.mutedApps.filter((p) => p !== pkg);
+  } else {
+    settings.mutedApps = [...settings.mutedApps, pkg];
+  }
+  save('cm.settings', settings);
+  applySound();
+}
+
 // ------------------------------------------------------------------ Tesla media card
 
 /** What's playing on the phone -> the media card the Tesla shows for the browser (app icon + title). */
@@ -510,12 +548,23 @@ if ('mediaSession' in navigator) {
 // The phone's sound plays through Web Audio, which the browser doesn't count as a media
 // player: the card showed the title and icon but no buttons. A looping silent clip is a real
 // <audio> player, so the card gets play, pause and skip (handled above, sent to the phone).
+// It only plays while sound comes through the car: a playing browser keeps the Tesla on its
+// browser source, and with the sound off the phone's Bluetooth audio should play instead.
 const mediaAnchor = new Audio(silentWav(10));
 mediaAnchor.loop = true;
+let anchorError = '';
 function startMediaAnchor() {
-  if (state.link && mediaAnchor.paused) mediaAnchor.play().catch(() => {}); // needs a tap first
+  if (!state.link || !soundOn || !mediaAnchor.paused) return;
+  mediaAnchor.play().then(
+    () => log('media card: player on'),
+    (e) => {
+      // a touch's pointerdown doesn't count as a tap for autoplay (pointerup does): log once per kind
+      if (anchorError !== e.name) warn('media card: player not started: ' + e.name);
+      anchorError = e.name;
+    },
+  );
 }
-document.addEventListener('pointerdown', startMediaAnchor, { capture: true });
+for (const ev of ['pointerdown', 'pointerup', 'keydown']) document.addEventListener(ev, startMediaAnchor, { capture: true });
 
 /** A blob URL: a WAV of [seconds] of silence (8 kHz, 8-bit mono: 80 KB for 10 s). */
 function silentWav(seconds) {
@@ -579,6 +628,7 @@ class Pane {
 
     $('.back', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'key', sid: this.sid, k: 'back' });
     $('.keyframe', this.el).onclick = () => this.sid && state.link?.sendCtl({ t: 'reset', sid: this.sid });
+    $('.sound', this.el).onclick = () => this.app && toggleAppSound(this.app.pkg);
     $('.mic', this.el).onclick = () => {
       if (!this.sid) return;
       const listening = $('.mic', this.el).classList.contains('listening');
@@ -619,6 +669,16 @@ class Pane {
     $('.close', this.el).hidden = !running && state.layout !== 'split';
     this.title.textContent = running ? this.app.label : state.layout === 'split' ? 'Choose an app' : 'Apps on ' + state.phoneName;
     this.statsEl.hidden = !settings.stats || !running;
+    this.setSoundButton();
+  }
+
+  setSoundButton() {
+    const btn = $('.sound', this.el);
+    btn.hidden = !this.sid || !this.app;
+    if (btn.hidden) return;
+    const off = !settings.sound || settings.mutedApps.includes(this.app.pkg);
+    btn.classList.toggle('off', off);
+    btn.title = off ? `Sound off for ${this.app.label}: tap to turn it on` : `Sound on: tap to mute ${this.app.label}`;
   }
 
   renderLauncher() {
@@ -867,6 +927,7 @@ class Pane {
 function savePanes() {
   const list = state.panes.map((p) => (p.app ? { pkg: p.app.pkg, label: p.app.label } : null));
   save('cm.panes', list);
+  applySound(); // the apps showing changed: one of them may be muted
 }
 
 function buildPanes() {
@@ -960,12 +1021,7 @@ function setupChrome() {
     if (relayChanged && state.link) {
       state.link.close('relay setting changed');
     }
-    const soundChanged = settings.sound !== $('#set-sound').checked;
     settings.sound = $('#set-sound').checked;
-    if (soundChanged) {
-      audio.setEnabled(settings.sound);
-      state.link?.sendCtl({ t: 'audio', on: settings.sound });
-    }
     if (settings.kbd !== $('#set-kbd').value) {
       settings.kbd = $('#set-kbd').value;
       sendKeyboardMode();
@@ -976,6 +1032,7 @@ function setupChrome() {
       if (!settings.notifs) $('#notif').hidden = true;
     }
     save('cm.settings', settings);
+    applySound();
     const streamChanged = before !== JSON.stringify([settings.bitrate, settings.fps, settings.scale]);
     for (const p of state.panes) {
       p.setChrome();

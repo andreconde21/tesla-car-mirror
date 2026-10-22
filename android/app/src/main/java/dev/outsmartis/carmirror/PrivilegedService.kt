@@ -53,7 +53,7 @@ class PrivilegedService : IPrivileged.Stub() {
         var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
-            FLAG_SUPPORTS_TOUCH or FLAG_ROTATES_WITH_CONTENT
+            FLAG_SUPPORTS_TOUCH
         if (Build.VERSION.SDK_INT >= 33) {
             flags = flags or FLAG_TRUSTED or FLAG_OWN_DISPLAY_GROUP or FLAG_ALWAYS_UNLOCKED or FLAG_TOUCH_FEEDBACK_DISABLED
         }
@@ -63,6 +63,7 @@ class PrivilegedService : IPrivileged.Stub() {
         val id = vd.display.displayId
         displays[id] = vd
         setImePolicy(id, IME_POLICY_LOCAL)
+        keepLandscape(id)
         Log.i(tag, "display $id ${width}x$height/$dpi")
         return id
     }
@@ -313,6 +314,24 @@ class PrivilegedService : IPrivileged.Stub() {
         }.onFailure { Log.w(tag, "IME policy: $it") }
     }
 
+    /**
+     * The car pane never turns: apps asking for portrait (YouTube leaving fullscreen) used to
+     * rotate the display, and the car got the picture sideways until the app was reopened.
+     * Rotation stays at 0 and orientation requests are ignored, so the app lays out for the pane.
+     */
+    private fun keepLandscape(displayId: Int) {
+        val wm = runCatching { serviceInterface("window", "android.view.IWindowManager") }.getOrNull() ?: return
+        runCatching {
+            wm.javaClass.getMethod("setIgnoreOrientationRequest", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+                .invoke(wm, displayId, true)
+        }.onFailure { Log.w(tag, "ignore orientation: $it") }
+        runCatching {
+            // Android 15 added a caller tag
+            val m = wm.javaClass.methods.first { it.name == "freezeDisplayRotation" }
+            if (m.parameterCount == 3) m.invoke(wm, displayId, 0, "CarMirror") else m.invoke(wm, displayId, 0)
+        }.onFailure { Log.w(tag, "freeze rotation: $it") }
+    }
+
     private fun displayManager(): DisplayManager {
         val ctor = DisplayManager::class.java.getDeclaredConstructor(Context::class.java)
         ctor.isAccessible = true
@@ -321,7 +340,6 @@ class PrivilegedService : IPrivileged.Stub() {
 
     companion object {
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
-        private const val FLAG_ROTATES_WITH_CONTENT = 1 shl 7
         private const val FLAG_TRUSTED = 1 shl 10
         private const val FLAG_OWN_DISPLAY_GROUP = 1 shl 11
         private const val FLAG_ALWAYS_UNLOCKED = 1 shl 12

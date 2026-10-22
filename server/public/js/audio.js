@@ -28,9 +28,10 @@ export class AudioPlayer {
     this.enabled = true;
     this.draining = false;
     this.stats = { n: 0, sum: 0, max: 0, fast: 0, dropped: 0, at: 0 };
-    // browsers only start audio after a user gesture: any tap on the page will do
-    const unlock = () => this.resume();
-    document.addEventListener('pointerdown', unlock, { capture: true });
+    // browsers only start audio after a user gesture: any tap on the page will do (on a touch
+    // screen that's the finger lifting: pointerdown alone doesn't count)
+    const unlock = () => this.enabled && this.resume();
+    for (const ev of ['pointerdown', 'pointerup', 'keydown']) document.addEventListener(ev, unlock, { capture: true });
   }
 
   static supported() {
@@ -137,9 +138,14 @@ export class AudioPlayer {
     this.stats = { n: 0, sum: 0, max: 0, fast: 0, dropped: 0, at: now };
   }
 
+  /** Off also suspends the audio output, so the car doesn't keep the browser as its sound source. */
   setEnabled(on) {
     this.enabled = on;
-    if (!on) this.next = 0;
+    if (on) this.resume();
+    else {
+      this.next = 0;
+      this.ctx?.suspend().catch(() => {});
+    }
   }
 }
 
