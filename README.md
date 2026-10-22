@@ -73,10 +73,15 @@ Android 16, while plain in-app MediaCodec works there.
   page is open, so Bluetooth audio from the phone isn't heard. The phone sends Opus (20 ms
   packets, unordered, no retransmits) and the car plays it with WebAudio. Source: the phone's
   output via remote submix with Shizuku (the phone goes quiet), else playback capture.
+  Sound can be turned off in Settings or per app (the speaker on the pane bar): when every app
+  showing is muted, the phone stops capturing (its own audio, e.g. Bluetooth music, is back) and
+  the car page suspends its audio so the browser stops being the car's sound source.
 - **Tesla media card.** The car page's Media Session shows what's playing on the phone (title
   with Shizuku or notification access, else the app in front); its play, pause and skip buttons
   control the phone. The page loops a silent `<audio>` clip: Web Audio alone doesn't count as a
-  media player, and the card then shows the title but no buttons.
+  media player, and the card then shows the title but no buttons (Linux Chrome reports it to
+  MPRIS as "Stopped"). On a touch screen the clip starts on the finger lifting: a touch
+  `pointerdown` isn't a user activation and `play()` is refused.
 - **Backpressure:** if the data channel backs up, the phone drops frames up to the next key
   frame and requests one, so delay can't build up. If the phone's encoder falls behind (more
   than 1.2 s for about 6 s), the car reopens the app at 2/3 resolution and 30 fps.

@@ -255,6 +255,9 @@ body.immersive .notif { top: 44px; }
 .notif-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notif-text { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .pb.mic.listening { background: var(--bad); color: #fff; }
+.pb.sound .slash, .pb.sound.off .wave { display: none; }
+.pb.sound.off .slash { display: inline; }
+.pb.sound.off { color: var(--bad); }
 
 .toast {
   position: fixed;
